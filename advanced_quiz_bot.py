@@ -4177,7 +4177,9 @@ function finishExam(){ clearInterval(timer); let correct=0,wrong=0,skipped=0; ac
 function applyFilter(mode){ document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active', btn.dataset.filter===mode)); document.querySelectorAll('.review-card').forEach(card=>{ card.style.display=(mode==='all'||card.dataset.status===mode)?'':'none'; }); }
 document.querySelectorAll('.tab').forEach(btn=>btn.onclick=()=>applyFilter(btn.dataset.filter)); $('startBtn').onclick=()=>{ renderExam(); showPage('examPage'); window.scrollTo({top:0,behavior:'smooth'}); startTimer(); }; $('submitBtn').onclick=finishExam; document.addEventListener('scroll',()=>{ if(!$('examPage').classList.contains('active')) return; const cards=[...document.querySelectorAll('.question-card')]; let activeIdx=0; for(const [idx,card] of cards.entries()){ const rect=card.getBoundingClientRect(); if(rect.top<=120) activeIdx=idx; } currentQuestion=activeIdx; updatePalette(); },{passive:true}); buildSectionSelectors(); typesetMath();
 </script></body></html>"""
+    brand_html = base.html_escape(get_brand_text())
     html = (tpl.replace('__TITLE__', title_html)
+              .replace('__BRAND__', brand_html)
               .replace('__TITLE_TEXT__', title_text)
               .replace('__QCOUNT__', str(len(questions)))
               .replace('__QTIME__', str(int(draft['question_time'])))
