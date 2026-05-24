@@ -222,32 +222,53 @@ base.get_required_channel = get_required_channel
 
 
 async def _patched_is_required_channel_member(context, user_id: int) -> bool:
+    """
+    Open access for participants. Anyone can take exams in a group, click a
+    practice link, or answer quiz polls in the bot inbox — even if they have
+    never messaged the bot before and even if they have not joined the
+    required channel. The required-channel gate is now enforced ONLY when a
+    user tries to *create* an exam (see ``_creator_channel_check``).
+    """
+    return True
+
+
+async def _creator_channel_check(context, user_id: int) -> Tuple[bool, str]:
+    """Return (allowed, channel_handle). Allowed if no channel set or user joined."""
     channel = get_required_channel()
     if not channel:
-        return True
+        return True, ""
     now = _time.time()
     cached = _membership_cache.get(int(user_id))
     if cached and (now - cached[0] < _MEMBERSHIP_TTL):
-        return cached[1]
+        return cached[1], channel
     blocked = {"left", "kicked", "banned"}
     try:
         member = await context.bot.get_chat_member(channel, int(user_id))
         status = str(getattr(member, "status", "")).lower()
         ok = status not in blocked
     except TelegramError as exc:
-        base.logger.warning(
-            "required-channel check failed for %s (%s) — allowing through",
-            user_id, exc,
-        )
+        base.logger.warning("creator-channel check failed for %s (%s) — allowing", user_id, exc)
         ok = True
     except Exception as exc:  # pragma: no cover
-        base.logger.warning("required-channel check raised: %s — allowing", exc)
+        base.logger.warning("creator-channel check raised: %s — allowing", exc)
         ok = True
     _membership_cache[int(user_id)] = (now, ok)
-    return ok
+    return ok, channel
+
+
+async def _send_creator_join_prompt(context, chat_id: int, channel: str) -> None:
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Join Required Channel", url=f"https://t.me/{channel.lstrip('@')}")]])
+    with suppress(Exception):
+        await context.bot.send_message(
+            chat_id,
+            f"To create an exam you must first join {channel}. Join the channel and try again.",
+            reply_markup=kb,
+        )
 
 
 base.is_required_channel_member = _patched_is_required_channel_member
+base._creator_channel_check = _creator_channel_check
+base._send_creator_join_prompt = _send_creator_join_prompt
 
 
 # ------------------------------------------------------------
