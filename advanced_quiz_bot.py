@@ -340,6 +340,30 @@ if _orig_panel_router is not None:
     base.panel_router = _gated_panel_router
 
 
+# ============================================================
+# Step 2: CSV format help override (new column order with type, section)
+# ============================================================
+
+async def _patched_send_csv_format_help(message):
+    text = (
+        "<b>CSV Format</b>\n"
+        "Columns (in this exact order):\n"
+        "<code>questions, option1, option2, option3, option4, answer, explanation, type, section</code>\n\n"
+        "• <b>answer</b> — option number (1, 2, 3, 4) or exact option text.\n"
+        "• <b>explanation</b> — optional, shown after the answer.\n"
+        "• <b>type</b> — always <code>1</code>.\n"
+        "• <b>section</b> — always <code>1</code>.\n\n"
+        "<b>Example row</b>\n"
+        "<code>d/dx (e^x) এর মান কত?,e,x e^x,e^x,ln x,3,e^x এর অন্তরীকরণ e^x,1,1</code>\n\n"
+        "Extra option columns up to <code>option10</code> are supported. "
+        "Re-importing a CSV exported from this bot always works."
+    )
+    await base.safe_reply(message, text, parse_mode=base.ParseMode.HTML)
+
+
+base.send_csv_format_help = _patched_send_csv_format_help
+
+
 def clean_forwarded_text(text: str) -> str:
     value = base.normalize_visual_text(text or "")
     value = urllib.parse.unquote(value)
