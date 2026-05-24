@@ -906,13 +906,96 @@ async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+async def cmd_setchannel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can change the required channel.")
+        return
+    raw = ""
+    if context.args:
+        raw = " ".join(context.args).strip()
+    else:
+        parts = (message.text or "").split(None, 1)
+        if len(parts) > 1:
+            raw = parts[1].strip()
+    if not raw:
+        current = get_required_channel() or "(disabled)"
+        await message.reply_text(
+            f"Current required channel: <b>{base.html_escape(current)}</b>\n\n"
+            f"Usage:\n"
+            f"<code>/setchannel @YourChannel</code> — require users to join\n"
+            f"<code>/setchannel off</code> — disable the requirement",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if raw.lower() in {"off", "disable", "none", "clear"}:
+        set_setting("required_channel", "__OFF__")
+        _membership_cache.clear()
+        try:
+            base.CONFIG.required_channel = ""
+        except Exception:
+            pass
+        await message.reply_text("Required-channel check is now <b>disabled</b>.", parse_mode=ParseMode.HTML)
+        return
+    handle = raw.lstrip("@").strip()
+    if not handle or not re.match(r"^[A-Za-z0-9_]{4,40}$", handle):
+        await message.reply_text("Invalid channel handle. Use @YourChannel or a valid username.")
+        return
+    channel = f"@{handle}"
+    # Try a probe call so the owner gets immediate feedback
+    try:
+        await context.bot.get_chat(channel)
+    except TelegramError as exc:
+        await message.reply_text(
+            f"Could not reach <code>{base.html_escape(channel)}</code>. "
+            f"Make sure the bot is an admin in that channel.\nError: <code>{base.html_escape(str(exc))}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    set_setting("required_channel", channel)
+    _membership_cache.clear()
+    try:
+        base.CONFIG.required_channel = channel
+    except Exception:
+        pass
+    await message.reply_text(
+        f"Required channel set to <b>{base.html_escape(channel)}</b>.\n"
+        f"Users must join this channel before using the bot.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_getchannel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if not message:
+        return
+    current = get_required_channel() or "(disabled)"
+    await message.reply_text(
+        f"Required channel: <b>{base.html_escape(current)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 def build_app() -> Application:
     from telegram.ext import CommandHandler
     app = _prev_build_app()
+    # Apply owner-set required channel to CONFIG at startup so bot_base
+    # join prompts and URLs reflect the DB-stored value.
+    try:
+        stored_channel = get_required_channel()
+        base.CONFIG.required_channel = stored_channel
+    except Exception:
+        pass
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
     app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
     app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
     app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
+    app.add_handler(CommandHandler("setchannel", cmd_setchannel), group=3)
+    app.add_handler(CommandHandler("getchannel", cmd_getchannel), group=3)
+    app.add_handler(CommandHandler("clearchannel", cmd_setchannel), group=3)
     return app
 
 
