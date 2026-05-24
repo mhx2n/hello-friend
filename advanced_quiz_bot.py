@@ -1405,6 +1405,7 @@ def build_app() -> Application:
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
     app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
     app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
+    app.add_handler(CommandHandler("mybrand", cmd_mybrand), group=3)
     app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
     app.add_handler(CommandHandler("setchannel", cmd_setchannel), group=3)
     app.add_handler(CommandHandler("getchannel", cmd_getchannel), group=3)
