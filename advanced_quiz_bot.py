@@ -979,6 +979,252 @@ async def cmd_getchannel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+# ============================================================
+# Step 8: Custom HTML welcome message with placeholders and
+# inline buttons. Owner-configurable. Sent on /start in DM.
+#
+# Placeholders supported in welcome text:
+#   {name}        full display name (escaped)
+#   {first_name}  first name (escaped)
+#   {last_name}   last name (escaped)
+#   {username}    @username or empty
+#   {id}          numeric Telegram user id
+#   {mention}     HTML user mention link
+#
+# Buttons stored as JSON: list of rows, each row is a list of
+# {"text": str, "url": str}. Owners build via /setbuttons using
+# one row per line, buttons in a row separated by " | ", and
+# label/url separated by " - ".
+# ============================================================
+DEFAULT_WELCOME_HTML = (
+    "<b>Welcome, {name}!</b>\n\n"
+    "I am ready to help you prepare. Use the panel below to start."
+)
+
+
+def get_welcome_text() -> str:
+    stored = get_setting("welcome_text", None)
+    if stored is None:
+        return ""  # empty = disabled
+    if stored == "__DEFAULT__":
+        return DEFAULT_WELCOME_HTML
+    return str(stored)
+
+
+def get_welcome_buttons() -> List[List[Dict[str, str]]]:
+    raw = get_setting("welcome_buttons", None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            cleaned: List[List[Dict[str, str]]] = []
+            for row in data:
+                if not isinstance(row, list):
+                    continue
+                row_btns: List[Dict[str, str]] = []
+                for btn in row:
+                    if isinstance(btn, dict) and btn.get("text") and btn.get("url"):
+                        row_btns.append({"text": str(btn["text"])[:64], "url": str(btn["url"])[:256]})
+                if row_btns:
+                    cleaned.append(row_btns)
+            return cleaned
+    except Exception:
+        pass
+    return []
+
+
+def render_welcome(template: str, user) -> str:
+    full_name = ((user.first_name or "") + " " + (user.last_name or "")).strip() or (user.username or "User")
+    mapping = {
+        "name": base.html_escape(full_name),
+        "first_name": base.html_escape(user.first_name or ""),
+        "last_name": base.html_escape(user.last_name or ""),
+        "username": base.html_escape(("@" + user.username) if user.username else ""),
+        "id": str(user.id),
+        "mention": f'<a href="tg://user?id={user.id}">{base.html_escape(full_name)}</a>',
+    }
+    out = template
+    for key, val in mapping.items():
+        out = out.replace("{" + key + "}", val)
+    return out
+
+
+def welcome_keyboard() -> Optional[InlineKeyboardMarkup]:
+    rows = get_welcome_buttons()
+    if not rows:
+        return None
+    kb: List[List[InlineKeyboardButton]] = []
+    for row in rows:
+        kb.append([InlineKeyboardButton(text=b["text"], url=b["url"]) for b in row])
+    return InlineKeyboardMarkup(kb)
+
+
+def parse_welcome_buttons(raw: str) -> List[List[Dict[str, str]]]:
+    """Parse text like:
+        Channel - https://t.me/foo | Group - https://t.me/bar
+        Support - https://t.me/help
+    Each line = one row. " | " separates buttons in a row.
+    " - " separates label and url.
+    """
+    rows: List[List[Dict[str, str]]] = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        row: List[Dict[str, str]] = []
+        for chunk in line.split("|"):
+            chunk = chunk.strip()
+            if not chunk or " - " not in chunk:
+                continue
+            label, url = chunk.split(" - ", 1)
+            label = label.strip()
+            url = url.strip()
+            if label and url.startswith(("http://", "https://", "tg://")):
+                row.append({"text": label[:64], "url": url[:256]})
+        if row:
+            rows.append(row)
+    return rows
+
+
+async def cmd_setwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can set the welcome message.")
+        return
+    raw = (message.text or "").split(None, 1)
+    body = raw[1].strip() if len(raw) > 1 else ""
+    if not body:
+        await message.reply_text(
+            "<b>Set Welcome Message</b>\n\n"
+            "Send the message after the command. HTML allowed.\n\n"
+            "Placeholders:\n"
+            "<code>{name}</code> <code>{first_name}</code> <code>{last_name}</code> "
+            "<code>{username}</code> <code>{id}</code> <code>{mention}</code>\n\n"
+            "Example:\n"
+            "<code>/setwelcome &lt;b&gt;Hi {name}&lt;/b&gt;\\nYour ID: {id}</code>\n\n"
+            "Other commands:\n"
+            "• /welcome — preview\n"
+            "• /clearwelcome — disable\n"
+            "• /setbuttons — configure inline buttons\n"
+            "• /clearbuttons — remove buttons",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if len(body) > 3500:
+        await message.reply_text("Welcome message too long (max 3500 chars).")
+        return
+    set_setting("welcome_text", body)
+    await message.reply_text("Welcome message saved. Use /welcome to preview.")
+
+
+async def cmd_clearwelcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can change welcome settings.")
+        return
+    set_setting("welcome_text", "")
+    await message.reply_text("Welcome message disabled.")
+
+
+async def cmd_welcome_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    template = get_welcome_text()
+    if not template:
+        await message.reply_text("No welcome message is set. Use /setwelcome to add one.")
+        return
+    try:
+        rendered = render_welcome(template, user)
+        await message.reply_text(
+            rendered,
+            parse_mode=ParseMode.HTML,
+            reply_markup=welcome_keyboard(),
+            disable_web_page_preview=True,
+        )
+    except TelegramError as exc:
+        await message.reply_text(f"Preview failed (likely bad HTML): {exc}")
+
+
+async def cmd_setbuttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can configure welcome buttons.")
+        return
+    raw = (message.text or "").split(None, 1)
+    body = raw[1].strip() if len(raw) > 1 else ""
+    if not body:
+        existing = get_welcome_buttons()
+        preview = "(none)"
+        if existing:
+            preview = "\n".join(
+                " | ".join(f"{b['text']} → {b['url']}" for b in row)
+                for row in existing
+            )
+        await message.reply_text(
+            "<b>Set Welcome Buttons</b>\n\n"
+            "One row per line. Buttons in same row separated by <code>|</code>.\n"
+            "Inside each button: <code>Label - URL</code>\n\n"
+            "Example:\n"
+            "<code>Channel - https://t.me/foo | Group - https://t.me/bar\nSupport - https://t.me/help</code>\n\n"
+            f"<b>Current:</b>\n<code>{base.html_escape(preview)}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    rows = parse_welcome_buttons(body)
+    if not rows:
+        await message.reply_text("No valid buttons parsed. Each button needs <code>Label - https://...</code>", parse_mode=ParseMode.HTML)
+        return
+    if sum(len(r) for r in rows) > 20:
+        await message.reply_text("Too many buttons (max 20).")
+        return
+    set_setting("welcome_buttons", json.dumps(rows, ensure_ascii=False))
+    total = sum(len(r) for r in rows)
+    await message.reply_text(f"Saved {total} button(s) across {len(rows)} row(s). Use /welcome to preview.")
+
+
+async def cmd_clearbuttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can change welcome buttons.")
+        return
+    set_setting("welcome_buttons", "")
+    await message.reply_text("Welcome buttons removed.")
+
+
+async def send_welcome_if_configured(context, message, user) -> bool:
+    """Send the configured welcome message + buttons. Returns True if sent."""
+    template = get_welcome_text()
+    if not template:
+        return False
+    try:
+        rendered = render_welcome(template, user)
+        await message.reply_text(
+            rendered,
+            parse_mode=ParseMode.HTML,
+            reply_markup=welcome_keyboard(),
+            disable_web_page_preview=True,
+        )
+        return True
+    except TelegramError as exc:
+        base.logger.warning("welcome send failed: %s", exc)
+        return False
+
+
 def build_app() -> Application:
     from telegram.ext import CommandHandler
     app = _prev_build_app()
