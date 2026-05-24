@@ -2511,9 +2511,46 @@ document.getElementById('submitBtn').onclick=finishExam; renderSections();
 </script></body></html>'''
 
 
+# Google Fonts import for Bangla/Unicode support in HTML result reports
+_BANGLA_FONTS_CSS = (
+    "<link rel='preconnect' href='https://fonts.googleapis.com'>"
+    "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>"
+    "<link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700;900&family=Inter:wght@400;600;700;900&display=swap' rel='stylesheet'>"
+)
+
+
+def _resolve_participant_name(participant_row: Any) -> str:
+    """Build a readable display name with full Bangla/Unicode support and graceful fallbacks."""
+    try:
+        raw = base.normalize_visual_text((participant_row['display_name'] if participant_row else '') or '')
+    except Exception:
+        raw = ''
+    if raw:
+        return raw
+    user_id = None
+    try:
+        user_id = int(participant_row['user_id'])
+    except Exception:
+        pass
+    if user_id:
+        try:
+            urow = base.DBH.fetchone('SELECT first_name, last_name, username FROM known_users WHERE user_id=?', (user_id,))
+        except Exception:
+            urow = None
+        if urow:
+            full = base.normalize_visual_text(' '.join(x for x in [urow['first_name'], urow['last_name']] if x))
+            if full:
+                return full
+            uname = base.normalize_visual_text(urow['username'] or '')
+            if uname:
+                return uname if uname.startswith('@') else f"@{uname}"
+        return f"User {user_id}"
+    return 'Student'
+
+
 def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[str, Any], ranking: List[Dict[str, Any]], review_items: List[Dict[str, Any]], section_items: List[Dict[str, Any]]) -> str:
     theme = _current_creator_theme(int(session['created_by']))
-    name = base.html_escape(base.normalize_visual_text(participant_row['display_name'] or 'Student'))
+    name = base.html_escape(_resolve_participant_name(participant_row))
     total_users = max(1, len(ranking))
     total_questions = int(session['total_questions'])
     correct = int(rank_item['correct'])
@@ -2547,9 +2584,9 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
         f"<div class='metric'><div class='muted'>{base.html_escape(item['title'])}</div><div class='value'>{item['correct']}/{item['total']}</div><div class='muted'>Wrong {item['wrong']} • Skipped {item['skipped']}</div></div>" for item in section_items
     )
     title = base.html_escape(base.normalize_visual_text(session['title']))
-    return f'''<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    return f'''<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{_BANGLA_FONTS_CSS}
 <title>{title} — Result</title>
-<style>:root{{--bg:{theme['bg']};--text:{theme['text']};--muted:{theme['muted']};--card:{theme['table']};--accent:{theme['accent']};--sub:{theme['subtext']};}}*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(135deg,var(--bg),#101827);color:var(--text)}}.wrap{{max-width:1100px;margin:0 auto;padding:22px}}.card{{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);backdrop-filter:blur(16px);border-radius:22px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:20px}}.title{{font-size:30px;font-weight:900;margin-bottom:6px}}.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:18px}}.metric{{padding:16px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}}.value{{font-size:30px;font-weight:900;margin-top:6px}}table{{width:100%;border-collapse:separate;border-spacing:0 10px;margin-top:12px}}th,td{{padding:12px 14px;text-align:left}}thead th{{color:var(--sub);font-size:12px;text-transform:uppercase;letter-spacing:.08em}}tbody tr{{background:rgba(255,255,255,.04)}}tbody td:first-child{{border-top-left-radius:14px;border-bottom-left-radius:14px}}tbody td:last-child{{border-top-right-radius:14px;border-bottom-right-radius:14px}}.two{{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:18px}}@media(max-width:900px){{.two{{grid-template-columns:1fr}}}}.review{{padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.04);margin-bottom:12px}}.q{{font-size:16px;line-height:1.55;margin:8px 0 10px;white-space:pre-wrap}}</style></head><body><div class="wrap"><div class="card"><div class="title">{title}</div><div class="muted">Result report for {name}</div><div class="grid"><div class="metric"><div class="muted">Rank</div><div class="value">#{rank_item['rank']}/{total_users}</div></div><div class="metric"><div class="muted">Score</div><div class="value">{score}</div></div><div class="metric"><div class="muted">Accuracy</div><div class="value">{accuracy:.2f}%</div></div><div class="metric"><div class="muted">Percentage</div><div class="value">{percentage:.2f}%</div></div><div class="metric"><div class="muted">Percentile</div><div class="value">{percentile:.2f}</div></div><div class="metric"><div class="muted">Negative / wrong</div><div class="value">{session['negative_mark']}</div></div></div></div><div class="two"><div class="card"><div style="font-size:20px;font-weight:900">Ranking board</div><table><thead><tr><th>#</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Score</th></tr></thead><tbody>{''.join(top_rows)}</tbody></table></div><div class="card"><div style="font-size:20px;font-weight:900">Section analysis</div><div class="grid" style="margin-top:12px">{section_html}</div></div></div><div class="card" style="margin-top:18px"><div style="font-size:20px;font-weight:900;margin-bottom:12px">Detailed review</div>{''.join(review_html)}</div></div></body></html>'''
+<style>:root{{--bg:{theme['bg']};--text:{theme['text']};--muted:{theme['muted']};--card:{theme['table']};--accent:{theme['accent']};--sub:{theme['subtext']};}}*{{box-sizing:border-box}}body{{margin:0;font-family:'Inter','Noto Sans Bengali',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(135deg,var(--bg),#101827);color:var(--text)}}.wrap{{max-width:1100px;margin:0 auto;padding:22px}}.card{{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);backdrop-filter:blur(16px);border-radius:22px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:20px}}.title{{font-size:30px;font-weight:900;margin-bottom:6px}}.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:18px}}.metric{{padding:16px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}}.value{{font-size:30px;font-weight:900;margin-top:6px}}table{{width:100%;border-collapse:separate;border-spacing:0 10px;margin-top:12px}}th,td{{padding:12px 14px;text-align:left}}thead th{{color:var(--sub);font-size:12px;text-transform:uppercase;letter-spacing:.08em}}tbody tr{{background:rgba(255,255,255,.04)}}tbody td:first-child{{border-top-left-radius:14px;border-bottom-left-radius:14px}}tbody td:last-child{{border-top-right-radius:14px;border-bottom-right-radius:14px}}.two{{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:18px}}@media(max-width:900px){{.two{{grid-template-columns:1fr}}}}.review{{padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.04);margin-bottom:12px}}.q{{font-size:16px;line-height:1.55;margin:8px 0 10px;white-space:pre-wrap}}</style></head><body><div class="wrap"><div class="card"><div class="title">{title}</div><div class="muted">Result report for {name}</div><div class="grid"><div class="metric"><div class="muted">Rank</div><div class="value">#{rank_item['rank']}/{total_users}</div></div><div class="metric"><div class="muted">Score</div><div class="value">{score}</div></div><div class="metric"><div class="muted">Accuracy</div><div class="value">{accuracy:.2f}%</div></div><div class="metric"><div class="muted">Percentage</div><div class="value">{percentage:.2f}%</div></div><div class="metric"><div class="muted">Percentile</div><div class="value">{percentile:.2f}</div></div><div class="metric"><div class="muted">Negative / wrong</div><div class="value">{session['negative_mark']}</div></div></div></div><div class="two"><div class="card"><div style="font-size:20px;font-weight:900">Ranking board</div><table><thead><tr><th>#</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Score</th></tr></thead><tbody>{''.join(top_rows)}</tbody></table></div><div class="card"><div style="font-size:20px;font-weight:900">Section analysis</div><div class="grid" style="margin-top:12px">{section_html}</div></div></div><div class="card" style="margin-top:18px"><div style="font-size:20px;font-weight:900;margin-bottom:12px">Detailed review</div>{''.join(review_html)}</div></div></body></html>'''
 
 
 def _section_breakdown_for_user(session_id: str, user_id: int) -> List[Dict[str, Any]]:
@@ -4348,7 +4385,7 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
         pct = 0 if not sec['total'] else round((sec['correct'] / sec['total']) * 100)
         section_cards.append(f"<div class='stat'><div class='label'>{base.html_escape(sec['title'])}</div><div class='value'>{sec['correct']}/{sec['total']}</div><div class='muted'>Wrong {sec['wrong']} • Skipped {sec['skipped']}</div><div class='bar'><span style='width:{pct}%'></span></div></div>")
     title = base.html_escape(base.normalize_visual_text(session['title']))
-    name = base.html_escape(base.normalize_visual_text(participant_row['display_name'] or 'Student'))
+    name = base.html_escape(_resolve_participant_name(participant_row))
     tpl = r'''<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>__TITLE__ — Result</title><style>
 :root{--accent:__ACCENT__;--success:__SUCCESS__;--danger:__DANGER__;--warning:__WARNING__;--bg:__LIGHT_BG__;--text:__LIGHT_TEXT__;--muted:__LIGHT_MUTED__;--surface:__LIGHT_CARD__;--border:__LIGHT_BORDER__}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,"Noto Sans Bengali",sans-serif;background:var(--bg);color:var(--text)}.shell{width:min(1140px,100% - 28px);margin-inline:auto;padding:28px 0}.card{background:var(--surface);border:1px solid var(--border);border-radius:24px;box-shadow:0 18px 48px rgba(15,23,42,.12)}.hero{padding:26px}.title{font-size:clamp(28px,4vw,42px);font-weight:900}.name{color:var(--muted);margin-top:6px}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:18px}.stat{padding:18px;border-radius:18px;background:#f8fafc;border:1px solid var(--border)}.label{font-size:13px;color:var(--muted);font-weight:800}.value{font-size:clamp(30px,4vw,44px);font-weight:900;margin-top:8px}.two{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;margin-top:18px}.panel{padding:22px}.table{width:100%;border-collapse:separate;border-spacing:0 10px}.table th,.table td{padding:12px 14px;text-align:left}.table thead th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.table tbody tr{background:#f8fafc}.table tbody tr.me{outline:2px solid rgba(37,99,235,.18)}.table tbody td:first-child{border-top-left-radius:14px;border-bottom-left-radius:14px}.table tbody td:last-child{border-top-right-radius:14px;border-bottom-right-radius:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.bar{height:10px;border-radius:999px;background:#e5e7eb;overflow:hidden;margin-top:10px}.bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),#0f172a)}.reviews{display:grid;gap:14px}.review-card{padding:18px;border-radius:18px;background:#f8fafc;border:1px solid var(--border)}.review-card.correct{border-left:5px solid var(--success)}.review-card.wrong{border-left:5px solid var(--danger)}.review-card.skipped{border-left:5px solid var(--warning)}.head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.q{font-size:18px;line-height:1.6;margin:10px 0}.line{margin-top:8px;line-height:1.5}.muted{color:var(--muted)}@media(max-width:900px){.two{grid-template-columns:1fr}}</style></head><body><div class="shell"><div class="card hero"><div class="title">__TITLE__</div><div class="name">Professional result report for __NAME__</div><div class="summary">__SUMMARY__</div></div><div class="two"><div class="card panel"><div class="title" style="font-size:24px">Ranking Board</div><table class="table"><thead><tr><th>#</th><th>Name</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Score</th></tr></thead><tbody>__TOP_ROWS__</tbody></table></div><div class="card panel"><div class="title" style="font-size:24px">Section Analysis</div><div class="grid" style="margin-top:14px">__SECTION_CARDS__</div></div></div><div class="card panel" style="margin-top:18px"><div class="title" style="font-size:24px">Detailed Review</div><div class="reviews" style="margin-top:14px">__REVIEWS__</div></div></div></body></html>'''
     summary_html = ''.join([
@@ -4359,7 +4396,8 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
         f"<div class='stat'><div class='label'>Percentile</div><div class='value'>{percentile:.2f}</div></div>",
         f"<div class='stat'><div class='label'>Negative / wrong</div><div class='value'>{session['negative_mark']}</div></div>",
     ])
-    return (tpl.replace('__TITLE__', title)
+    return (tpl.replace('<head>', '<head>' + _BANGLA_FONTS_CSS, 1)
+              .replace('__TITLE__', title)
               .replace('__NAME__', name)
               .replace('__SUMMARY__', summary_html)
               .replace('__TOP_ROWS__', ''.join(top_rows))
@@ -4957,7 +4995,7 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
     percentile = 100.0 if total_users <= 1 else ((total_users - int(rank_item['rank'])) / (total_users - 1)) * 100.0
     score = str(rank_item['score'])
     title = base.html_escape(base.normalize_visual_text(session['title']))
-    name = base.html_escape(base.normalize_visual_text(participant_row['display_name'] or 'Student'))
+    name = base.html_escape(_resolve_participant_name(participant_row))
     summary_html = ''.join([
         f"<div class='stat'><div class='label'>Rank</div><div class='value'>#{rank_item['rank']}/{total_users}</div></div>",
         f"<div class='stat'><div class='label'>Score</div><div class='value'>{score}</div></div>",
