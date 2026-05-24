@@ -4132,6 +4132,188 @@ buildSectionSelectors();
     return html
 
 
+# ============================================================
+# Step 3: Cute professional theme picker for HTML exam export
+# Owner can set default via /exporttheme <id>. Students can pick at start.
+# ============================================================
+
+_HTML_EXAM_THEMES = [
+    {"id": "sakura",   "name": "🌸 Sakura Bloom",
+     "accent": "#ec4899", "accent_soft": "rgba(236,72,153,.16)",
+     "page_bg": "linear-gradient(135deg,#fff5f7 0%,#ffe4ec 60%,#fbcfe8 100%)",
+     "surface": "#ffffff", "surface_2": "#fff1f5", "text": "#3b1129",
+     "muted": "#9d3a66", "border": "#fbcfe8", "hero": "linear-gradient(135deg,#ffd6e3,#fff1f5)",
+     "chip": "rgba(236,72,153,.10)", "glass": "rgba(255,255,255,.86)"},
+    {"id": "mint",     "name": "🌿 Mint Garden",
+     "accent": "#10b981", "accent_soft": "rgba(16,185,129,.16)",
+     "page_bg": "linear-gradient(135deg,#f0fdf4 0%,#dcfce7 60%,#bbf7d0 100%)",
+     "surface": "#ffffff", "surface_2": "#ecfdf5", "text": "#064e3b",
+     "muted": "#047857", "border": "#bbf7d0", "hero": "linear-gradient(135deg,#bbf7d0,#ecfdf5)",
+     "chip": "rgba(16,185,129,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "ocean",    "name": "🌊 Ocean Breeze",
+     "accent": "#0ea5e9", "accent_soft": "rgba(14,165,233,.16)",
+     "page_bg": "linear-gradient(135deg,#f0f9ff 0%,#e0f2fe 60%,#bae6fd 100%)",
+     "surface": "#ffffff", "surface_2": "#f0f9ff", "text": "#0c4a6e",
+     "muted": "#0369a1", "border": "#bae6fd", "hero": "linear-gradient(135deg,#bae6fd,#e0f2fe)",
+     "chip": "rgba(14,165,233,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "lavender", "name": "💜 Lavender Mist",
+     "accent": "#8b5cf6", "accent_soft": "rgba(139,92,246,.16)",
+     "page_bg": "linear-gradient(135deg,#faf5ff 0%,#ede9fe 60%,#ddd6fe 100%)",
+     "surface": "#ffffff", "surface_2": "#f5f3ff", "text": "#3b0764",
+     "muted": "#6d28d9", "border": "#ddd6fe", "hero": "linear-gradient(135deg,#ddd6fe,#f5f3ff)",
+     "chip": "rgba(139,92,246,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "peach",    "name": "🍑 Peach Sorbet",
+     "accent": "#f97316", "accent_soft": "rgba(249,115,22,.16)",
+     "page_bg": "linear-gradient(135deg,#fff7ed 0%,#ffedd5 60%,#fed7aa 100%)",
+     "surface": "#ffffff", "surface_2": "#fff7ed", "text": "#431407",
+     "muted": "#c2410c", "border": "#fed7aa", "hero": "linear-gradient(135deg,#fed7aa,#fff7ed)",
+     "chip": "rgba(249,115,22,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "sunset",   "name": "🌅 Sunset Glow",
+     "accent": "#e11d48", "accent_soft": "rgba(225,29,72,.16)",
+     "page_bg": "linear-gradient(135deg,#fff1f2 0%,#ffe4e6 50%,#fecdd3 100%)",
+     "surface": "#ffffff", "surface_2": "#fff1f2", "text": "#4c0519",
+     "muted": "#be123c", "border": "#fecdd3", "hero": "linear-gradient(135deg,#fecdd3,#fff1f2)",
+     "chip": "rgba(225,29,72,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "lemon",    "name": "🍋 Lemon Soda",
+     "accent": "#ca8a04", "accent_soft": "rgba(202,138,4,.18)",
+     "page_bg": "linear-gradient(135deg,#fefce8 0%,#fef9c3 60%,#fde68a 100%)",
+     "surface": "#ffffff", "surface_2": "#fefce8", "text": "#422006",
+     "muted": "#a16207", "border": "#fde68a", "hero": "linear-gradient(135deg,#fde68a,#fefce8)",
+     "chip": "rgba(202,138,4,.10)", "glass": "rgba(255,255,255,.88)"},
+    {"id": "midnight", "name": "🌙 Midnight Pro",
+     "accent": "#a78bfa", "accent_soft": "rgba(167,139,250,.20)",
+     "page_bg": "linear-gradient(135deg,#0b1120 0%,#111827 60%,#1f2937 100%)",
+     "surface": "#111827", "surface_2": "#1f2937", "text": "#f1f5f9",
+     "muted": "#94a3b8", "border": "rgba(148,163,184,.18)", "hero": "linear-gradient(135deg,#1f2937,#0b1120)",
+     "chip": "rgba(167,139,250,.14)", "glass": "rgba(17,24,39,.86)"},
+    {"id": "forest",   "name": "🌲 Deep Forest",
+     "accent": "#34d399", "accent_soft": "rgba(52,211,153,.20)",
+     "page_bg": "linear-gradient(135deg,#022c22 0%,#064e3b 60%,#065f46 100%)",
+     "surface": "#064e3b", "surface_2": "#065f46", "text": "#ecfdf5",
+     "muted": "#a7f3d0", "border": "rgba(167,243,208,.20)", "hero": "linear-gradient(135deg,#065f46,#022c22)",
+     "chip": "rgba(52,211,153,.14)", "glass": "rgba(6,78,59,.88)"},
+    {"id": "rose",     "name": "🌹 Rose Quartz",
+     "accent": "#f43f5e", "accent_soft": "rgba(244,63,94,.18)",
+     "page_bg": "linear-gradient(135deg,#fff1f2 0%,#ffe4e6 40%,#fecaca 100%)",
+     "surface": "#ffffff", "surface_2": "#fff5f5", "text": "#3f1212",
+     "muted": "#9f1239", "border": "#fecaca", "hero": "linear-gradient(135deg,#fecaca,#fff5f5)",
+     "chip": "rgba(244,63,94,.10)", "glass": "rgba(255,255,255,.88)"},
+]
+_HTML_EXAM_THEME_IDS = {t["id"] for t in _HTML_EXAM_THEMES}
+
+
+def _get_owner_default_theme(owner_id: int) -> str:
+    stored = (get_setting(f"export_theme:{owner_id}", "") or "").strip()
+    if stored in _HTML_EXAM_THEME_IDS:
+        return stored
+    return "sakura"
+
+
+_orig_render_scroll_exam_html_v2 = render_scroll_exam_html
+
+
+def render_scroll_exam_html(draft: Any, owner_id: int) -> str:  # type: ignore[no-redef]
+    html = _orig_render_scroll_exam_html_v2(draft, owner_id)
+    default_id = _get_owner_default_theme(owner_id)
+    themes_json = json.dumps(_HTML_EXAM_THEMES, ensure_ascii=False)
+
+    inject_css = (
+        "\n/* Step 3: cute theme system overrides */\n"
+        "body[data-exam-theme]{background:var(--page-bg-2,var(--page-bg))!important;color:var(--text-2,var(--text))!important}\n"
+        ".theme-picker{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}\n"
+        ".theme-swatch{position:relative;width:54px;height:54px;border-radius:16px;cursor:pointer;"
+        "border:2px solid rgba(255,255,255,.5);box-shadow:0 6px 18px rgba(15,23,42,.18);overflow:hidden;"
+        "transition:transform .18s ease,box-shadow .18s ease}\n"
+        ".theme-swatch:hover{transform:translateY(-2px) scale(1.04)}\n"
+        ".theme-swatch.active{outline:3px solid #111;outline-offset:2px}\n"
+        ".theme-swatch .dot{position:absolute;right:6px;bottom:6px;width:14px;height:14px;border-radius:50%;border:2px solid #fff}\n"
+        ".theme-row{display:flex;flex-direction:column;gap:10px;margin-top:6px}\n"
+        ".theme-row .lbl{font-weight:800;font-size:14px;color:var(--muted)}\n"
+    )
+    html = html.replace("</style>", inject_css + "</style>", 1)
+
+    picker_html = (
+        '<div class="theme-row">'
+        '<div class="lbl">🎨 Choose a theme</div>'
+        '<div id="themePicker" class="theme-picker"></div>'
+        '</div>'
+    )
+    # insert picker right before the actions row inside the start card
+    html = html.replace('<div class="actions">', picker_html + '<div class="actions">', 1)
+
+    inject_js = (
+        "\n// Step 3: theme picker runtime\n"
+        f"const EXAM_THEMES = {themes_json};\n"
+        f"const DEFAULT_THEME_ID = {json.dumps(default_id)};\n"
+        "function applyExamTheme(t){\n"
+        "  if(!t) return;\n"
+        "  const b = document.body; b.setAttribute('data-exam-theme', t.id);\n"
+        "  const set = (k,v)=>b.style.setProperty(k, v);\n"
+        "  set('--page-bg', t.page_bg); set('--page-bg-2', t.page_bg);\n"
+        "  set('--text', t.text); set('--text-2', t.text);\n"
+        "  set('--muted', t.muted); set('--surface', t.surface);\n"
+        "  set('--surface-2', t.surface_2); set('--border', t.border);\n"
+        "  set('--hero', t.hero); set('--chip', t.chip); set('--glass', t.glass);\n"
+        "  set('--accent', t.accent); set('--accent-soft', t.accent_soft);\n"
+        "  try{localStorage.setItem('examThemeId', t.id);}catch(e){}\n"
+        "  document.querySelectorAll('.theme-swatch').forEach(s=>{s.classList.toggle('active', s.dataset.id===t.id);});\n"
+        "}\n"
+        "function buildThemePicker(){\n"
+        "  const box = document.getElementById('themePicker'); if(!box) return;\n"
+        "  box.innerHTML='';\n"
+        "  EXAM_THEMES.forEach(t=>{\n"
+        "    const sw = document.createElement('button'); sw.type='button'; sw.className='theme-swatch';\n"
+        "    sw.dataset.id = t.id; sw.title = t.name;\n"
+        "    sw.style.background = t.page_bg;\n"
+        "    const dot = document.createElement('span'); dot.className='dot'; dot.style.background = t.accent;\n"
+        "    sw.appendChild(dot);\n"
+        "    sw.onclick = ()=>applyExamTheme(t);\n"
+        "    box.appendChild(sw);\n"
+        "  });\n"
+        "  let saved = null; try{saved = localStorage.getItem('examThemeId');}catch(e){}\n"
+        "  const initial = EXAM_THEMES.find(x=>x.id===saved) || EXAM_THEMES.find(x=>x.id===DEFAULT_THEME_ID) || EXAM_THEMES[0];\n"
+        "  applyExamTheme(initial);\n"
+        "}\n"
+        "buildThemePicker();\n"
+    )
+    # inject before closing </script> of the main script block
+    html = html.replace("buildSectionSelectors();", "buildSectionSelectors();\n" + inject_js, 1)
+    return html
+
+
+# Owner command: set the default exam-export theme
+async def _cmd_export_theme(update, context):
+    user = update.effective_user
+    if not user or not base.is_owner(user.id):
+        await update.message.reply_text("Only the owner can change the default exam theme.")
+        return
+    args = context.args or []
+    if not args:
+        current = _get_owner_default_theme(user.id)
+        lines = [f"<b>Current default theme</b>: <code>{current}</code>", "", "<b>Available themes</b>:"]
+        for t in _HTML_EXAM_THEMES:
+            mark = "◆" if t["id"] == current else "•"
+            lines.append(f"{mark} <code>{t['id']}</code> — {t['name']}")
+        lines.append("")
+        lines.append("Usage: <code>/exporttheme &lt;id&gt;</code>")
+        await update.message.reply_text("\n".join(lines), parse_mode=base.ParseMode.HTML)
+        return
+    new_id = args[0].strip().lower()
+    if new_id not in _HTML_EXAM_THEME_IDS:
+        await update.message.reply_text(
+            f"Unknown theme. Run /exporttheme without args to see the list."
+        )
+        return
+    set_setting(f"export_theme:{user.id}", new_id)
+    name = next((t["name"] for t in _HTML_EXAM_THEMES if t["id"] == new_id), new_id)
+    await update.message.reply_text(
+        f"◆ Default HTML exam theme set to <b>{name}</b> (<code>{new_id}</code>).",
+        parse_mode=base.ParseMode.HTML,
+    )
+
+
+
+
 def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[str, Any], ranking: List[Dict[str, Any]], review_items: List[Dict[str, Any]], section_items: List[Dict[str, Any]]) -> str:
     theme = _export_theme_palette(int(session['created_by']), {'html_export_theme': 'dark'})
     total_users = max(1, len(ranking))
