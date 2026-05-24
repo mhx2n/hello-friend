@@ -5150,5 +5150,171 @@ img,svg{max-width:100%;height:auto}
               .replace('__LIGHT_BORDER__', theme['light_border'])
               .replace('__LIGHT_MUTED__', theme['light_muted']))
 
+# ============================================================
+# Final patches: friendlier name fallback, scoped commands honour
+# overrides, creator-only channel gate, hide prefix toggle for
+# non-privileged users, darker greens in HTML export.
+# ============================================================
+
+try:
+    _orig_split_user_labels = base.split_user_labels
+
+    def _patched_split_user_labels(display_name, username, fallback_user_id=None):
+        main, sub = _orig_split_user_labels(display_name, username, fallback_user_id)
+        if main and main.startswith("User ") and main[5:].strip().isdigit():
+            raw = base.normalize_visual_text(display_name or "") if hasattr(base, "normalize_visual_text") else (display_name or "").strip()
+            if raw:
+                return raw[:80], sub
+            uname = (username or "").strip()
+            if uname:
+                return (uname if uname.startswith("@") else f"@{uname}")[:80], sub
+            if fallback_user_id:
+                try:
+                    urow = base.DBH.fetchone(
+                        "SELECT first_name, last_name, username FROM known_users WHERE user_id=?",
+                        (int(fallback_user_id),),
+                    )
+                except Exception:
+                    urow = None
+                if urow:
+                    full = " ".join(x for x in [urow["first_name"], urow["last_name"]] if x).strip()
+                    if full:
+                        return full[:80], sub
+                    un = (urow["username"] or "").strip()
+                    if un:
+                        return (un if un.startswith("@") else f"@{un}")[:80], sub
+            return "Student", sub
+        return main, sub
+
+    base.split_user_labels = _patched_split_user_labels
+except Exception:
+    pass
+
+
+try:
+    from telegram import BotCommandScopeAllPrivateChats as _ScopeAll, BotCommandScopeAllChatAdministrators as _ScopeGAdm, BotCommandScopeChat as _ScopeChat
+except Exception:
+    _ScopeAll = _ScopeGAdm = _ScopeChat = None
+
+
+async def _patched_refresh_scoped_commands(bot) -> None:
+    if _ScopeAll is None:
+        return
+    try:
+        everyone = base.everyone_private_commands()
+        admin_cmds = base.admin_private_commands()
+        owner_cmds = base.owner_private_commands()
+        group_cmds = base.group_admin_commands()
+    except Exception:
+        return
+    with suppress(Exception):
+        await bot.set_my_commands(everyone, scope=_ScopeAll())
+    with suppress(Exception):
+        await bot.set_my_commands(group_cmds, scope=_ScopeGAdm())
+    try:
+        admin_ids = list(base.all_admin_ids())
+    except Exception:
+        admin_ids = []
+    for uid in admin_ids:
+        try:
+            cmds = owner_cmds if base.is_owner(uid) else admin_cmds
+        except Exception:
+            cmds = admin_cmds
+        with suppress(Exception):
+            await bot.set_my_commands(cmds, scope=_ScopeChat(uid))
+
+
+base.refresh_scoped_commands = _patched_refresh_scoped_commands
+
+
+_prev_handle_text_final = base.handle_text
+
+
+async def _gated_handle_text_for_newexam(update: Update, context) -> None:
+    message = getattr(update, "effective_message", None)
+    user = getattr(update, "effective_user", None)
+    chat = getattr(update, "effective_chat", None)
+    try:
+        if message and user and chat and chat.type == "private" and getattr(message, "text", None):
+            cmd, _a = base.extract_command(message.text, context.bot_data.get("bot_username", ""))
+            if (cmd or "").lower() == "newexam":
+                ok, channel = await _creator_channel_check(context, user.id)
+                if not ok:
+                    await _send_creator_join_prompt(context, chat.id, channel)
+                    return
+    except Exception:
+        pass
+    return await _prev_handle_text_final(update, context)
+
+
+base.handle_text = _gated_handle_text_for_newexam
+
+
+_prev_callback_router_final = getattr(base, "callback_router", None)
+if _prev_callback_router_final is not None:
+    async def _gated_callback_router_for_newexam(update: Update, context) -> None:
+        try:
+            q = getattr(update, "callback_query", None)
+            user = getattr(update, "effective_user", None)
+            data = (getattr(q, "data", "") or "") if q else ""
+            if data.startswith("panel:new") and user:
+                ok, channel = await _creator_channel_check(context, user.id)
+                if not ok:
+                    with suppress(Exception):
+                        await q.answer(f"Join {channel} first to create an exam.", show_alert=True)
+                    with suppress(Exception):
+                        await _send_creator_join_prompt(context, user.id, channel)
+                    return
+        except Exception:
+            pass
+        return await _prev_callback_router_final(update, context)
+
+    base.callback_router = _gated_callback_router_for_newexam
+
+
+try:
+    _orig_build_draft_detail = _build_draft_detail_text_markup
+
+    def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, header: str = "", bot_username: str = ""):
+        text, kb = _orig_build_draft_detail(user_id, draft_id, page, header, bot_username)
+        if _is_privileged(user_id):
+            return text, kb
+        try:
+            new_rows = []
+            for row in kb.inline_keyboard:
+                filtered = [btn for btn in row if "ux:prefix:" not in (getattr(btn, "callback_data", "") or "")]
+                if filtered:
+                    new_rows.append(filtered)
+            return text, InlineKeyboardMarkup(new_rows)
+        except Exception:
+            return text, kb
+except Exception:
+    pass
+
+
+try:
+    _DARK_GREEN = "#15803d"
+    _orig_render_scroll_exam_html = render_scroll_exam_html
+
+    def render_scroll_exam_html(draft, owner_id):  # type: ignore[no-redef]
+        html_doc = _orig_render_scroll_exam_html(draft, owner_id)
+        html_doc = html_doc.replace("color:#d9f7be", f"color:{_DARK_GREEN}")
+        html_doc = html_doc.replace(
+            ".score-ring{font-size:clamp(54px,10vw,98px);font-weight:900;line-height:1;color:var(--accent)}",
+            ".score-ring{font-size:clamp(54px,10vw,98px);font-weight:900;line-height:1;color:" + _DARK_GREEN + "}",
+        )
+        html_doc = html_doc.replace(
+            ".score-ring{font-size:clamp(52px,10vw,96px);font-weight:900;line-height:1;color:var(--accent)}",
+            ".score-ring{font-size:clamp(52px,10vw,96px);font-weight:900;line-height:1;color:" + _DARK_GREEN + "}",
+        )
+        html_doc = html_doc.replace(
+            ".brand-line{font-weight:800;color:var(--accent);font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
+            ".brand-line{font-weight:800;color:" + _DARK_GREEN + ";font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
+        )
+        return html_doc
+except Exception:
+    pass
+
+
 if __name__ == "__main__":
     base.main()
