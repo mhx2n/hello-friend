@@ -1026,11 +1026,49 @@ async def cmd_setbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    user = update.effective_user
     if not message:
         return
-    current = get_brand_text()
+    current = get_brand_text(user.id if user else None)
     await message.reply_text(
         f"Current brand:\n<b>{base.html_escape(current)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_mybrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Per-user branding shown above every quiz they create. Available to all users."""
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    new_brand = ""
+    if context.args:
+        new_brand = " ".join(context.args).strip()
+    else:
+        raw = (message.text or "").split(None, 1)
+        if len(raw) > 1:
+            new_brand = raw[1].strip()
+    key = f"brand_text:{int(user.id)}"
+    if not new_brand:
+        current = get_setting(key, "").strip() or get_brand_text(user.id)
+        await message.reply_text(
+            f"Your channel/quiz branding:\n<b>{base.html_escape(current)}</b>\n\n"
+            f"Set with: <code>/mybrand Your Channel Name</code>\n"
+            f"Clear with: <code>/mybrand off</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if new_brand.lower() in {"off", "clear", "reset", "none"}:
+        set_setting(key, "")
+        await message.reply_text("Your personal branding cleared. The default brand will be used.")
+        return
+    if len(new_brand) > 80:
+        await message.reply_text("Brand text must be 80 characters or fewer.")
+        return
+    set_setting(key, new_brand)
+    await message.reply_text(
+        f"Your branding updated. Every quiz you start will now show:\n\n<b>{base.html_escape(new_brand)}</b>",
         parse_mode=ParseMode.HTML,
     )
 
