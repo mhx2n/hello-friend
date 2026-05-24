@@ -2443,6 +2443,25 @@ async def callback_router(update: Update, context) -> None:
                 text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ HTML export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
+        if action == 'csv' and len(parts) >= 4:
+            draft_id, page = parts[2], int(parts[3])
+            draft = resolve_editable_draft(user.id, draft_id)
+            if not draft:
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
+                return
+            try:
+                csv_bytes = _build_draft_csv_bytes(draft)
+                await context.bot.send_document(
+                    user.id,
+                    document=InputFile(base.io.BytesIO(csv_bytes), filename=f"{base.pdf_safe_filename(draft['title'])}.csv"),
+                    caption='CSV export — re-importable. Use /importtext or upload back to restore the draft.',
+                )
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '✅ CSV exported.', context.bot_data.get('bot_username', ''))
+            except Exception as exc:
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ CSV export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
+            await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
+            return
     return await _prev_callback_router_v4(update, context)
 
 
