@@ -88,6 +88,129 @@ ensure_column("sessions", "paused_at", "INTEGER")
 ensure_column("session_questions", "section_title", "TEXT")
 ensure_column("session_questions", "question_time_override", "INTEGER")
 
+# ------------------------------------------------------------
+# Runtime settings (owner-configurable, persisted in SQLite)
+# ------------------------------------------------------------
+base.DBH.executescript(
+    """
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    );
+    """
+)
+
+
+def get_setting(key: str, default: str = "") -> str:
+    row = base.DBH.fetchone("SELECT value FROM bot_settings WHERE key=?", (key,))
+    if not row:
+        return default
+    val = row["value"]
+    return default if val is None else str(val)
+
+
+def set_setting(key: str, value: str) -> None:
+    base.DBH.execute(
+        "INSERT INTO bot_settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value) if value is not None else ""),
+    )
+
+
+def get_brand_text() -> str:
+    """Owner-configurable branding shown at the top of every quiz poll."""
+    override = get_setting("brand_text", "").strip()
+    if override:
+        return override
+    default = (getattr(base.CONFIG, "brand_name", "") or "").strip()
+    return default or "Quiz"
+
+
+# Expose to base namespace
+base.get_setting = get_setting
+base.set_setting = set_setting
+base.get_brand_text = get_brand_text
+
+
+def _build_question_prefix(next_index: int, total: int) -> str:
+    """
+    Professional poll header format:
+
+        {owner branding}
+        <blank line>
+        [{n}/{total}]
+        <question follows>
+    """
+    brand = get_brand_text()
+    return f"{brand}\n\n[{next_index}/{total}]\n"
+
+
+base._build_question_prefix = _build_question_prefix
+
+
+# ------------------------------------------------------------
+# Patch: required-channel membership check (fail-open + 5-min cache)
+#
+# Original check returned False on ANY TelegramError, silently marking
+# legitimate participants ineligible (their votes were dropped from Top
+# Results — visible bug: only one of two players showed up). We now:
+#   * cache the result for 5 minutes per user_id (huge speed-up too)
+#   * fail-open on TelegramError so transient API failures / bot not
+#     being admin in the channel never punish a real voter
+# ------------------------------------------------------------
+import time as _time
+
+_membership_cache: Dict[int, Tuple[float, bool]] = {}
+_MEMBERSHIP_TTL = 300.0  # seconds
+
+
+async def _patched_is_required_channel_member(context, user_id: int) -> bool:
+    channel = (getattr(base.CONFIG, "required_channel", "") or "").strip()
+    if not channel:
+        return True
+    now = _time.time()
+    cached = _membership_cache.get(int(user_id))
+    if cached and (now - cached[0] < _MEMBERSHIP_TTL):
+        return cached[1]
+    blocked = {"left", "kicked", "banned"}
+    try:
+        member = await context.bot.get_chat_member(channel, int(user_id))
+        status = str(getattr(member, "status", "")).lower()
+        ok = status not in blocked
+    except TelegramError as exc:
+        base.logger.warning(
+            "required-channel check failed for %s (%s) — allowing through",
+            user_id, exc,
+        )
+        ok = True
+    except Exception as exc:  # pragma: no cover
+        base.logger.warning("required-channel check raised: %s — allowing", exc)
+        ok = True
+    _membership_cache[int(user_id)] = (now, ok)
+    return ok
+
+
+base.is_required_channel_member = _patched_is_required_channel_member
+
+
+# ------------------------------------------------------------
+# Patch: handle_poll_answer — never clobber an already-eligible
+# participant back to ineligible when a transient membership check
+# returns False. Just silently ignore the vote in that edge case.
+# ------------------------------------------------------------
+_orig_handle_poll_answer = base.handle_poll_answer
+
+
+async def _patched_handle_poll_answer(update, context):
+    answer = getattr(update, "poll_answer", None)
+    if answer and answer.user:
+        # Pre-warm the cache so the base function's check is fast & consistent
+        await _patched_is_required_channel_member(context, answer.user.id)
+    return await _orig_handle_poll_answer(update, context)
+
+
+base.handle_poll_answer = _patched_handle_poll_answer
+
 
 base._FINAL_SUPPORTED_GROUP_COMMANDS = set(getattr(base, "_FINAL_SUPPORTED_GROUP_COMMANDS", set())) | {
     "pauseq",
@@ -512,11 +635,7 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
 
     try:
-        prefix_parts = [f"[{next_index}/{total}]"]
-        if section_title:
-            prefix_parts.append(f"[{section_title}]")
-        prefix_parts.append(f"[{base.normalize_visual_text(session['title'])}]")
-        question_prefix = " ".join(prefix_parts) + "\n"
+        question_prefix = _build_question_prefix(next_index, total)
         poll_question = (question_prefix + str(q["question"])).strip()
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
@@ -704,9 +823,59 @@ async def handle_inline_query(update: Update, context) -> None:
 
 _prev_build_app = base.build_app
 
+
+async def cmd_setbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can change the brand.")
+        return
+    new_brand = ""
+    if context.args:
+        new_brand = " ".join(context.args).strip()
+    else:
+        # also accept "/setbrand\n<text>"
+        raw = (message.text or "").split(None, 1)
+        if len(raw) > 1:
+            new_brand = raw[1].strip()
+    if not new_brand:
+        current = get_brand_text()
+        await message.reply_text(
+            f"Current brand:\n<b>{base.html_escape(current)}</b>\n\n"
+            f"Usage: <code>/setbrand Your Brand Name Here</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if len(new_brand) > 80:
+        await message.reply_text("Brand text must be 80 characters or fewer.")
+        return
+    set_setting("brand_text", new_brand)
+    await message.reply_text(
+        f"Brand updated. Every quiz poll header will now use:\n\n<b>{base.html_escape(new_brand)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if not message:
+        return
+    current = get_brand_text()
+    await message.reply_text(
+        f"Current brand:\n<b>{base.html_escape(current)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 def build_app() -> Application:
+    from telegram.ext import CommandHandler
     app = _prev_build_app()
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
+    app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
+    app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
+    app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
     return app
 
 
@@ -2020,12 +2189,8 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
         base_seconds = int(q['question_time_override'] or session['question_time'] or 30)
         speed_factor = float(session['speed_factor'] or 1.0)
         effective_seconds = max(5, int(round(base_seconds * speed_factor)))
-        prefix_parts = [f"[{next_index}/{total}]"]
-        if section_title:
-            prefix_parts.append(f"[{section_title}]")
-        if show_title:
-            prefix_parts.append(f"[{base.normalize_visual_text(session['title'])}]")
-        question_prefix = (' '.join(prefix_parts) + '\n') if prefix_parts else ''
+        prefix_parts = [f"[{next_index}/{total}]"]  # kept for caption fallback
+        question_prefix = _build_question_prefix(next_index, total)
         poll_question = (question_prefix + q_text).strip() or q_text or f"Question {next_index}"
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
@@ -2721,12 +2886,8 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
     q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
-    prefix_parts = [f'[{next_index}/{total}]']
-    if section_title:
-        prefix_parts.append(f'[{section_title}]')
-    if show_title:
-        prefix_parts.append(f'[{base.normalize_visual_text(session["title"])}]')
-    question_prefix = (' '.join(prefix_parts) + '\n') if prefix_parts else ''
+    prefix_parts = [f'[{next_index}/{total}]']  # kept for image caption fallback
+    question_prefix = _build_question_prefix(next_index, total)
     poll_question = (question_prefix + q_text).strip() or q_text
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
@@ -3575,12 +3736,8 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
     q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
-    prefix_parts = [f'[{next_index}/{total}]']
-    if section_title:
-        prefix_parts.append(f'[{section_title}]')
-    if show_title:
-        prefix_parts.append(f'[{base.normalize_visual_text(session["title"])}]')
-    question_prefix = (' '.join(prefix_parts) + '\n') if prefix_parts else ''
+    prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
+    question_prefix = _build_question_prefix(next_index, total)
     poll_question = (question_prefix + _latex_to_pretty_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
