@@ -117,8 +117,19 @@ def set_setting(key: str, value: str) -> None:
     )
 
 
-def get_brand_text() -> str:
-    """Owner-configurable branding shown at the top of every quiz poll."""
+def get_brand_text(creator_id: Optional[int] = None) -> str:
+    """Owner-configurable branding shown at the top of every quiz poll.
+
+    Resolution order:
+      1) per-creator override:  brand_text:{creator_id}
+      2) global override:       brand_text
+      3) CONFIG.brand_name
+      4) "Quiz"
+    """
+    if creator_id:
+        per_user = get_setting(f"brand_text:{int(creator_id)}", "").strip()
+        if per_user:
+            return per_user
     override = get_setting("brand_text", "").strip()
     if override:
         return override
@@ -153,20 +164,27 @@ base.user_has_staff_access = user_has_staff_access
 
 
 
-def _build_question_prefix(next_index: int, total: int) -> str:
+def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     """
-    Professional poll header format:
+    Professional poll header — clean multi-line alignment so the question
+    no longer collapses into a single hard-to-read line. Format:
 
-        {owner branding}
-        <blank line>
-        [{n}/{total}]
-        <question follows>
+        ✦ {brand}
+        ━━━━━━━━━━━━━━
+        Q {n} / {total}  •  {section}
+
+        {question text follows on its own block}
     """
-    brand = get_brand_text()
-    return f"{brand}\n[{next_index}/{total}]\n"
+    brand = get_brand_text(creator_id)
+    sec = (section_title or "").strip()
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\nQ {next_index} / {total}"
+    if sec:
+        head += f"  •  {sec}"
+    return head + "\n\n"
 
 
 base._build_question_prefix = _build_question_prefix
+
 
 
 # ------------------------------------------------------------
@@ -779,7 +797,11 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
 
     try:
-        question_prefix = _build_question_prefix(next_index, total)
+        try:
+            _creator_id = int(session["created_by"] or 0)
+        except Exception:
+            _creator_id = 0
+        question_prefix = _build_question_prefix(next_index, total, creator_id=_creator_id, section_title=section_title)
         poll_question = (question_prefix + str(q["question"])).strip()
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
@@ -1004,11 +1026,49 @@ async def cmd_setbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    user = update.effective_user
     if not message:
         return
-    current = get_brand_text()
+    current = get_brand_text(user.id if user else None)
     await message.reply_text(
         f"Current brand:\n<b>{base.html_escape(current)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_mybrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Per-user branding shown above every quiz they create. Available to all users."""
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    new_brand = ""
+    if context.args:
+        new_brand = " ".join(context.args).strip()
+    else:
+        raw = (message.text or "").split(None, 1)
+        if len(raw) > 1:
+            new_brand = raw[1].strip()
+    key = f"brand_text:{int(user.id)}"
+    if not new_brand:
+        current = get_setting(key, "").strip() or get_brand_text(user.id)
+        await message.reply_text(
+            f"Your channel/quiz branding:\n<b>{base.html_escape(current)}</b>\n\n"
+            f"Set with: <code>/mybrand Your Channel Name</code>\n"
+            f"Clear with: <code>/mybrand off</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if new_brand.lower() in {"off", "clear", "reset", "none"}:
+        set_setting(key, "")
+        await message.reply_text("Your personal branding cleared. The default brand will be used.")
+        return
+    if len(new_brand) > 80:
+        await message.reply_text("Brand text must be 80 characters or fewer.")
+        return
+    set_setting(key, new_brand)
+    await message.reply_text(
+        f"Your branding updated. Every quiz you start will now show:\n\n<b>{base.html_escape(new_brand)}</b>",
         parse_mode=ParseMode.HTML,
     )
 
@@ -1345,6 +1405,7 @@ def build_app() -> Application:
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
     app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
     app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
+    app.add_handler(CommandHandler("mybrand", cmd_mybrand), group=3)
     app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
     app.add_handler(CommandHandler("setchannel", cmd_setchannel), group=3)
     app.add_handler(CommandHandler("getchannel", cmd_getchannel), group=3)
