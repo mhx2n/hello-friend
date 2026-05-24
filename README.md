@@ -75,6 +75,42 @@ This is the most reliable Bot-API-safe approach.
 4. Add the environment variables from `.env.example`.
 5. Deploy.
 
+## 💾 Free permanent storage (survives restarts and redeploys)
+
+Render's free tier wipes the disk on every restart/redeploy, so the
+SQLite file is lost. The bot already has a built-in **GitHub backup
+engine** — it serialises the entire database to a JSON file in a
+private GitHub repo after every change, and automatically restores it
+on boot. This is 100% free.
+
+### One-time setup (5 minutes)
+
+1. **Create a private GitHub repo** (e.g. `my-quizbot-backup`). It can be
+   completely empty.
+2. **Create a Personal Access Token (Fine-grained)**:
+   - GitHub → Settings → Developer settings → Personal access tokens →
+     Fine-grained tokens → Generate new token.
+   - Repository access: *Only select repositories* → pick the backup repo.
+   - Repository permissions: **Contents → Read and write**.
+   - Copy the token (`github_pat_…`).
+3. **Add these environment variables** in Render → your service → Environment:
+   - `GITHUB_TOKEN` = the token from step 2
+   - `GITHUB_REPO` = `your-username/my-quizbot-backup`
+   - `GITHUB_BRANCH` = `main` (optional, default `main`)
+   - `GITHUB_STATE_PATH` = `data/state.json` (optional)
+4. Redeploy. Backups now run automatically (debounced, ~15 s after every
+   change).
+
+### Owner commands for backup & stats
+- `/stats` — total users, active users (24h / 7d), groups, drafts,
+  questions, sessions, practice attempts, DB size, backup status.
+- `/backupnow` — force an immediate upload to GitHub.
+- `/restorebackup` — pull the latest backup from GitHub into the live DB.
+
+The bot also auto-restores from GitHub on first start when the local DB
+is empty, so a fresh deploy on a new host comes up with all your drafts,
+users, practice links and admins intact.
+
 ## Local run
 ```bash
 python -m venv .venv
@@ -83,3 +119,4 @@ pip install -r requirements.txt
 cp .env.example .env
 python advanced_quiz_bot.py
 ```
+

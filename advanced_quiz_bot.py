@@ -1488,7 +1488,143 @@ async def send_welcome_if_configured(context, message, user) -> bool:
         return False
 
 
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only bot usage statistics."""
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can view stats.")
+        return
+
+    def _count(sql: str, args=()) -> int:
+        try:
+            row = base.DBH.fetchone(sql, args)
+            if not row:
+                return 0
+            for key in row.keys():
+                return int(row[key] or 0)
+        except Exception:
+            return 0
+        return 0
+
+    total_users = _count("SELECT COUNT(*) AS c FROM known_users")
+    started_users = _count("SELECT COUNT(*) AS c FROM known_users WHERE started=1")
+    day_active = _count("SELECT COUNT(*) AS c FROM known_users WHERE last_seen >= ?", (base.now_ts() - 86400,))
+    week_active = _count("SELECT COUNT(*) AS c FROM known_users WHERE last_seen >= ?", (base.now_ts() - 7 * 86400,))
+    total_groups = _count("SELECT COUNT(*) AS c FROM known_chats")
+    total_drafts = _count("SELECT COUNT(*) AS c FROM drafts")
+    total_questions = _count("SELECT COUNT(*) AS c FROM draft_questions")
+    total_sessions = _count("SELECT COUNT(*) AS c FROM sessions")
+    finished_sessions = _count("SELECT COUNT(*) AS c FROM sessions WHERE status='finished'")
+    total_participants = _count("SELECT COUNT(*) AS c FROM participants")
+    practice_links = _count("SELECT COUNT(*) AS c FROM practice_links")
+    practice_attempts = _count("SELECT COALESCE(SUM(attempts), 0) AS c FROM practice_attempts")
+    admins = _count("SELECT COUNT(*) AS c FROM bot_admins")
+    schedules = _count("SELECT COUNT(*) AS c FROM schedules WHERE status='pending'")
+
+    db_size = 0
+    try:
+        db_size = base.DBH.path.stat().st_size
+    except Exception:
+        pass
+
+    backup_status = "❌ Not configured (GITHUB_TOKEN/GITHUB_REPO missing)"
+    if getattr(base, "GITHUB_TOKEN", "") and getattr(base, "GITHUB_REPO", ""):
+        backup_status = f"✅ {base.GITHUB_REPO} → <code>{base.GITHUB_STATE_PATH}</code>"
+
+    def _fmt_size(n: int) -> str:
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.1f} {unit}"
+            n = n / 1024
+        return f"{n:.1f} TB"
+
+    text = (
+        f"<b>📊 {base.html_escape(base.CONFIG.brand_name)} — Stats</b>\n\n"
+        f"<b>👥 Users</b>\n"
+        f"• Total known: <b>{total_users}</b>\n"
+        f"• Activated (/start): <b>{started_users}</b>\n"
+        f"• Active 24h: <b>{day_active}</b>\n"
+        f"• Active 7d: <b>{week_active}</b>\n"
+        f"• Admins: <b>{admins}</b>\n\n"
+        f"<b>👨‍👩‍👧 Groups</b>\n"
+        f"• Known groups: <b>{total_groups}</b>\n"
+        f"• Pending schedules: <b>{schedules}</b>\n\n"
+        f"<b>📝 Content</b>\n"
+        f"• Drafts: <b>{total_drafts}</b>\n"
+        f"• Questions: <b>{total_questions}</b>\n"
+        f"• Practice links: <b>{practice_links}</b>\n"
+        f"• Practice attempts: <b>{practice_attempts}</b>\n\n"
+        f"<b>🏁 Exams</b>\n"
+        f"• Total sessions: <b>{total_sessions}</b>\n"
+        f"• Finished: <b>{finished_sessions}</b>\n"
+        f"• Participant entries: <b>{total_participants}</b>\n\n"
+        f"<b>💾 Storage</b>\n"
+        f"• DB file: <b>{_fmt_size(db_size)}</b>\n"
+        f"• GitHub backup: {backup_status}"
+    )
+    await message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+
+async def cmd_backupnow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Force an immediate GitHub state backup (owner only)."""
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can trigger backups.")
+        return
+    if not (getattr(base, "GITHUB_TOKEN", "") and getattr(base, "GITHUB_REPO", "")):
+        await message.reply_text(
+            "❌ GitHub backup is not configured.\n\n"
+            "Set <code>GITHUB_TOKEN</code> and <code>GITHUB_REPO</code> "
+            "(format <code>owner/repo</code>) as environment variables, then redeploy.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    notice = await message.reply_text("⏳ Backing up state to GitHub…")
+    try:
+        ok = await asyncio.get_event_loop().run_in_executor(None, base.upload_state_backup_to_github)
+        if ok:
+            await notice.edit_text(
+                f"✅ Backup uploaded to <code>{base.GITHUB_REPO}</code> → "
+                f"<code>{base.GITHUB_STATE_PATH}</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            await notice.edit_text("❌ Backup failed. Check logs.")
+    except Exception as exc:
+        await notice.edit_text(f"❌ Backup error: <code>{base.html_escape(str(exc))}</code>", parse_mode=ParseMode.HTML)
+
+
+async def cmd_restorebackup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Force a restore from GitHub backup (owner only)."""
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can restore from backup.")
+        return
+    if not (getattr(base, "GITHUB_TOKEN", "") and getattr(base, "GITHUB_REPO", "")):
+        await message.reply_text("❌ GitHub backup is not configured.")
+        return
+    notice = await message.reply_text("⏳ Restoring state from GitHub…")
+    try:
+        ok = await asyncio.get_event_loop().run_in_executor(None, base.restore_state_from_github)
+        if ok:
+            await notice.edit_text("✅ State restored from GitHub backup.")
+        else:
+            await notice.edit_text("⚠️ No backup found, or restore returned no data.")
+    except Exception as exc:
+        await notice.edit_text(f"❌ Restore error: <code>{base.html_escape(str(exc))}</code>", parse_mode=ParseMode.HTML)
+
+
 def build_app() -> Application:
+
     from telegram.ext import CommandHandler
     app = _prev_build_app()
     # Apply owner-set required channel to CONFIG at startup so bot_base
@@ -1512,7 +1648,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("setbuttons", cmd_setbuttons), group=3)
     app.add_handler(CommandHandler("clearbuttons", cmd_clearbuttons), group=3)
     app.add_handler(CommandHandler("exporttheme", _cmd_export_theme), group=3)
+    app.add_handler(CommandHandler("stats", cmd_stats), group=3)
+    app.add_handler(CommandHandler("backupnow", cmd_backupnow), group=3)
+    app.add_handler(CommandHandler("restorebackup", cmd_restorebackup), group=3)
     return app
+
 
 
 base.build_app = build_app
