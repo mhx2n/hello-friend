@@ -2311,13 +2311,21 @@ def _smart_clean_question_text(raw: str) -> str:
     value = re.sub(r"\bvia\b\s+@?[A-Za-z0-9_]+", " ", value, flags=re.I)
     value = URL_RE.sub(" ", value)
     value = USERNAME_RE.sub(" ", value)
-    value = re.sub(r"\s+", " ", value).strip(" -–—|•[]")
+    # PRESERVE original line breaks so forwarded multi-line questions
+    # render the same way the user saw them. Only collapse runs of
+    # horizontal whitespace and trim excess blank lines.
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = value.strip(" \t\n-–—|•[]")
     if value:
         return value
     fallback = re.sub(r"/view_[A-Za-z0-9_]+", " ", original)
     fallback = COUNTER_RE.sub("", fallback)
-    fallback = re.sub(r"\s+", " ", fallback).strip(" -–—|•[]")
-    return fallback
+    fallback = re.sub(r"[ \t]+", " ", fallback)
+    fallback = re.sub(r" *\n *", "\n", fallback)
+    fallback = re.sub(r"\n{3,}", "\n\n", fallback)
+    return fallback.strip(" \t\n-–—|•[]")
 
 
 def _smart_clean_option_text(raw: str) -> str:
@@ -2440,7 +2448,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
             if q_line:
                 question_parts.append(q_line)
 
-        question = _smart_clean_question_text(" ".join(question_parts))
+        question = _smart_clean_question_text("\n".join(question_parts))
         cleaned_options = [_smart_clean_option_text(x) for x in options if _smart_clean_option_text(x)]
         if correct_idx is None and answer_ref is not None:
             correct_idx = parse_answer_ref(answer_ref, cleaned_options)
@@ -5133,7 +5141,7 @@ def _parse_numbered_question_format(text: str) -> List[Dict[str, Any]]:
                 options[-1] = base.normalize_visual_text(options[-1] + ' ' + line).strip()
             else:
                 explanation_parts.append(line)
-        question = _smart_clean_question_text(' '.join(question_parts))
+        question = _smart_clean_question_text('\n'.join(question_parts))
         if correct_idx is None and answer_ref:
             correct_idx = parse_answer_ref(answer_ref, options)
         if question and len(options) >= 2 and correct_idx is not None:
@@ -5592,9 +5600,66 @@ try:
                 # let original chain handle deep-link practice
                 return await _prev_handle_text_final(update, context)
             try:
+                row = base.DBH.fetchone(
+                    "SELECT started FROM known_users WHERE user_id=?", (user.id,)
+                )
+                already_started = bool(row and int(row["started"] or 0))
+            except Exception:
+                already_started = False
+            try:
                 base.mark_started(user)
             except Exception:
                 pass
+
+            # Privileged users always go straight to the admin panel.
+            if _is_privileged(user.id):
+                await _patched_refresh_user_panel_by_id(context, user.id)
+                return
+
+            # For regular users: on first /start (or while not yet a member
+            # of the required channel) show the owner-configured welcome +
+            # a Join button. Once they are a member, /start opens the panel
+            # directly with no re-welcome.
+            try:
+                joined = await _patched_is_required_channel_member(context, user.id)
+            except Exception:
+                joined = True
+
+            if not joined or not already_started:
+                channel = base.CONFIG.required_channel
+                # Try the owner-configured welcome first.
+                sent_welcome = False
+                try:
+                    if get_welcome_text():
+                        sent_welcome = await send_welcome_if_configured(
+                            context, message, user
+                        )
+                except Exception:
+                    sent_welcome = False
+                if not joined:
+                    kb = InlineKeyboardMarkup([[InlineKeyboardButton(
+                        "✅ Join Required Channel",
+                        url=f"https://t.me/{channel.lstrip('@')}",
+                    )], [InlineKeyboardButton("🔄 I have joined — continue", callback_data="panel:home")]])
+                    intro = (
+                        f"<b>{base.html_escape(base.CONFIG.brand_name)}</b>\n\n"
+                        f"Welcome! You can take any exam this bot runs in a group, "
+                        f"or open a practice link shared with you — no setup needed.\n\n"
+                        f"<b>Want to create your own exams?</b>\n"
+                        f"Join our channel {base.html_escape(channel)} first, then tap "
+                        f"<i>“I have joined — continue”</i> to unlock exam creation."
+                    )
+                    with suppress(Exception):
+                        await context.bot.send_message(
+                            user.id, intro,
+                            parse_mode=base.ParseMode.HTML,
+                            reply_markup=kb,
+                            disable_web_page_preview=True,
+                        )
+                    return
+                # Joined but first-ever /start without a welcome configured —
+                # fall through to the regular user panel.
+
             await _patched_refresh_user_panel_by_id(context, user.id)
         except Exception:
             with suppress(Exception):
