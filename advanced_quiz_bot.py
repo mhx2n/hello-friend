@@ -4994,7 +4994,7 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
     percentile = 100.0 if total_users <= 1 else ((total_users - int(rank_item['rank'])) / (total_users - 1)) * 100.0
     score = str(rank_item['score'])
     title = base.html_escape(base.normalize_visual_text(session['title']))
-    name = base.html_escape(base.normalize_visual_text(participant_row['display_name'] or 'Student'))
+    name = base.html_escape(_resolve_participant_name(participant_row))
     summary_html = ''.join([
         f"<div class='stat'><div class='label'>Rank</div><div class='value'>#{rank_item['rank']}/{total_users}</div></div>",
         f"<div class='stat'><div class='label'>Score</div><div class='value'>{score}</div></div>",
