@@ -2671,7 +2671,9 @@ async def send_private_results(context, session_id: str) -> None:
             link = base.get_message_link(int(session['chat_id']), int(qrow['message_id'] or 0), username) if qrow else None
             label = f'<a href="{link}">Q{q_no}</a>' if link else f'Q{q_no}'
             buckets[item['status']].append(label)
-        correct = int(rank_item['correct']); wrong = int(rank_item['wrong']); skipped = int(rank_item['skipped'])
+        correct = int(rank_item['correct'])
+        wrong = int(rank_item['wrong'])
+        skipped = int(rank_item['skipped'])
         attempted = max(1, correct + wrong)
         accuracy = (correct / attempted) * 100.0
         percentage = (correct / max(1, int(session['total_questions']))) * 100.0
