@@ -88,6 +88,129 @@ ensure_column("sessions", "paused_at", "INTEGER")
 ensure_column("session_questions", "section_title", "TEXT")
 ensure_column("session_questions", "question_time_override", "INTEGER")
 
+# ------------------------------------------------------------
+# Runtime settings (owner-configurable, persisted in SQLite)
+# ------------------------------------------------------------
+base.DBH.executescript(
+    """
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    );
+    """
+)
+
+
+def get_setting(key: str, default: str = "") -> str:
+    row = base.DBH.fetchone("SELECT value FROM bot_settings WHERE key=?", (key,))
+    if not row:
+        return default
+    val = row["value"]
+    return default if val is None else str(val)
+
+
+def set_setting(key: str, value: str) -> None:
+    base.DBH.execute(
+        "INSERT INTO bot_settings(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value) if value is not None else ""),
+    )
+
+
+def get_brand_text() -> str:
+    """Owner-configurable branding shown at the top of every quiz poll."""
+    override = get_setting("brand_text", "").strip()
+    if override:
+        return override
+    default = (getattr(base.CONFIG, "brand_name", "") or "").strip()
+    return default or "Quiz"
+
+
+# Expose to base namespace
+base.get_setting = get_setting
+base.set_setting = set_setting
+base.get_brand_text = get_brand_text
+
+
+def _build_question_prefix(next_index: int, total: int) -> str:
+    """
+    Professional poll header format:
+
+        {owner branding}
+        <blank line>
+        [{n}/{total}]
+        <question follows>
+    """
+    brand = get_brand_text()
+    return f"{brand}\n\n[{next_index}/{total}]\n"
+
+
+base._build_question_prefix = _build_question_prefix
+
+
+# ------------------------------------------------------------
+# Patch: required-channel membership check (fail-open + 5-min cache)
+#
+# Original check returned False on ANY TelegramError, silently marking
+# legitimate participants ineligible (their votes were dropped from Top
+# Results — visible bug: only one of two players showed up). We now:
+#   * cache the result for 5 minutes per user_id (huge speed-up too)
+#   * fail-open on TelegramError so transient API failures / bot not
+#     being admin in the channel never punish a real voter
+# ------------------------------------------------------------
+import time as _time
+
+_membership_cache: Dict[int, Tuple[float, bool]] = {}
+_MEMBERSHIP_TTL = 300.0  # seconds
+
+
+async def _patched_is_required_channel_member(context, user_id: int) -> bool:
+    channel = (getattr(base.CONFIG, "required_channel", "") or "").strip()
+    if not channel:
+        return True
+    now = _time.time()
+    cached = _membership_cache.get(int(user_id))
+    if cached and (now - cached[0] < _MEMBERSHIP_TTL):
+        return cached[1]
+    blocked = {"left", "kicked", "banned"}
+    try:
+        member = await context.bot.get_chat_member(channel, int(user_id))
+        status = str(getattr(member, "status", "")).lower()
+        ok = status not in blocked
+    except TelegramError as exc:
+        base.logger.warning(
+            "required-channel check failed for %s (%s) — allowing through",
+            user_id, exc,
+        )
+        ok = True
+    except Exception as exc:  # pragma: no cover
+        base.logger.warning("required-channel check raised: %s — allowing", exc)
+        ok = True
+    _membership_cache[int(user_id)] = (now, ok)
+    return ok
+
+
+base.is_required_channel_member = _patched_is_required_channel_member
+
+
+# ------------------------------------------------------------
+# Patch: handle_poll_answer — never clobber an already-eligible
+# participant back to ineligible when a transient membership check
+# returns False. Just silently ignore the vote in that edge case.
+# ------------------------------------------------------------
+_orig_handle_poll_answer = base.handle_poll_answer
+
+
+async def _patched_handle_poll_answer(update, context):
+    answer = getattr(update, "poll_answer", None)
+    if answer and answer.user:
+        # Pre-warm the cache so the base function's check is fast & consistent
+        await _patched_is_required_channel_member(context, answer.user.id)
+    return await _orig_handle_poll_answer(update, context)
+
+
+base.handle_poll_answer = _patched_handle_poll_answer
+
 
 base._FINAL_SUPPORTED_GROUP_COMMANDS = set(getattr(base, "_FINAL_SUPPORTED_GROUP_COMMANDS", set())) | {
     "pauseq",
