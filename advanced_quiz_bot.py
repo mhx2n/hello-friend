@@ -2448,7 +2448,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
             if q_line:
                 question_parts.append(q_line)
 
-        question = _smart_clean_question_text(" ".join(question_parts))
+        question = _smart_clean_question_text("\n".join(question_parts))
         cleaned_options = [_smart_clean_option_text(x) for x in options if _smart_clean_option_text(x)]
         if correct_idx is None and answer_ref is not None:
             correct_idx = parse_answer_ref(answer_ref, cleaned_options)
