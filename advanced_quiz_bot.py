@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputTextMessageContent, Poll, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import Application, InlineQueryHandler
+from telegram.ext import Application, ContextTypes, InlineQueryHandler
 from telegram import InlineQueryResultArticle
 
 BASE_PATH = Path(__file__).resolve().with_name("bot_base.py")
@@ -2671,7 +2671,9 @@ async def send_private_results(context, session_id: str) -> None:
             link = base.get_message_link(int(session['chat_id']), int(qrow['message_id'] or 0), username) if qrow else None
             label = f'<a href="{link}">Q{q_no}</a>' if link else f'Q{q_no}'
             buckets[item['status']].append(label)
-        correct = int(rank_item['correct']); wrong = int(rank_item['wrong']); skipped = int(rank_item['skipped'])
+        correct = int(rank_item['correct'])
+        wrong = int(rank_item['wrong'])
+        skipped = int(rank_item['skipped'])
         attempted = max(1, correct + wrong)
         accuracy = (correct / attempted) * 100.0
         percentage = (correct / max(1, int(session['total_questions']))) * 100.0
@@ -2821,7 +2823,7 @@ async def callback_router(update: Update, context) -> None:
             return
         if action == 'del' and len(parts) >= 5:
             draft_id, q_no, page = parts[2], _safe_int(parts[3]), _safe_int(parts[4])
-            removed = delete_single_question(draft_id, q_no)
+            removed = delete_question_numbers(draft_id, [q_no])
             sanitize_existing_draft_questions(draft_id)
             text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'✅ Removed <b>{removed}</b> question(s).')
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
@@ -3107,6 +3109,7 @@ def _export_theme_palette(owner_id: int, draft: Any) -> Dict[str, str]:
 
 def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     theme = _export_theme_palette(owner_id, draft)
+    title = base.html_escape(base.normalize_visual_text(str(draft['title'] or 'Exam')))
     questions = _draft_question_rows_with_sections(str(draft['id']))
     if not questions:
         raise ValueError('Draft has no valid questions.')
