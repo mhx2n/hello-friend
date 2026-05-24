@@ -5565,5 +5565,74 @@ except Exception:
     pass
 
 
+# ============================================================
+# Belt-and-suspenders: register an explicit /start CommandHandler at
+# highest priority (group=-100) so the role-aware welcome ALWAYS wins,
+# even if any chained handle_text wrapper short-circuits.
+# Also force role-aware welcome for /help, /commands, /panel.
+# ============================================================
+try:
+    from telegram.ext import CommandHandler as _CommandHandler
+
+    _orig_build_app_final = base.build_app
+
+    async def _force_role_start(update, context):
+        try:
+            user = getattr(update, "effective_user", None)
+            chat = getattr(update, "effective_chat", None)
+            message = getattr(update, "effective_message", None)
+            if not user or not chat or chat.type != "private":
+                return
+            args_text = ""
+            if message and getattr(message, "text", None):
+                _, args_text = base.extract_command(
+                    message.text, context.bot_data.get("bot_username", "")
+                )
+            if (args_text or "").strip().startswith("practice_"):
+                # let original chain handle deep-link practice
+                return await _prev_handle_text_final(update, context)
+            try:
+                base.mark_started(user)
+            except Exception:
+                pass
+            await _patched_refresh_user_panel_by_id(context, user.id)
+        except Exception:
+            with suppress(Exception):
+                return await _prev_handle_text_final(update, context)
+
+    async def _force_role_commands(update, context):
+        try:
+            user = getattr(update, "effective_user", None)
+            chat = getattr(update, "effective_chat", None)
+            message = getattr(update, "effective_message", None)
+            if not user or not chat or not message:
+                return
+            is_admin_u = False
+            is_owner_u = False
+            try:
+                is_admin_u = base.is_bot_admin(user.id)
+                is_owner_u = base.is_owner(user.id)
+            except Exception:
+                pass
+            text = build_commands_text(chat.type, is_admin_u, is_owner_u)
+            await base.safe_reply(message, text)
+        except Exception:
+            with suppress(Exception):
+                return await _prev_handle_text_final(update, context)
+
+    def _patched_build_app_final():
+        app = _orig_build_app_final()
+        try:
+            app.add_handler(_CommandHandler("start", _force_role_start), group=-100)
+            app.add_handler(_CommandHandler(["help", "commands", "cmds"], _force_role_commands), group=-100)
+        except Exception:
+            pass
+        return app
+
+    base.build_app = _patched_build_app_final
+except Exception:
+    pass
+
+
 if __name__ == "__main__":
     base.main()
