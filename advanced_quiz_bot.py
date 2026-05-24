@@ -823,9 +823,59 @@ async def handle_inline_query(update: Update, context) -> None:
 
 _prev_build_app = base.build_app
 
+
+async def cmd_setbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can change the brand.")
+        return
+    new_brand = ""
+    if context.args:
+        new_brand = " ".join(context.args).strip()
+    else:
+        # also accept "/setbrand\n<text>"
+        raw = (message.text or "").split(None, 1)
+        if len(raw) > 1:
+            new_brand = raw[1].strip()
+    if not new_brand:
+        current = get_brand_text()
+        await message.reply_text(
+            f"Current brand:\n<b>{base.html_escape(current)}</b>\n\n"
+            f"Usage: <code>/setbrand Your Brand Name Here</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if len(new_brand) > 80:
+        await message.reply_text("Brand text must be 80 characters or fewer.")
+        return
+    set_setting("brand_text", new_brand)
+    await message.reply_text(
+        f"Brand updated. Every quiz poll header will now use:\n\n<b>{base.html_escape(new_brand)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if not message:
+        return
+    current = get_brand_text()
+    await message.reply_text(
+        f"Current brand:\n<b>{base.html_escape(current)}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 def build_app() -> Application:
+    from telegram.ext import CommandHandler
     app = _prev_build_app()
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
+    app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
+    app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
+    app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
     return app
 
 
