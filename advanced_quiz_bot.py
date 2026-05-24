@@ -118,18 +118,17 @@ def set_setting(key: str, value: str) -> None:
 
 
 def get_brand_text(creator_id: Optional[int] = None) -> str:
-    """Owner-configurable branding shown at the top of every quiz poll.
+    """Owner-only branding shown at the top of every quiz poll.
+
+    Per-user branding is intentionally disabled — only the bot owner can
+    configure this via /setbrand. The ``creator_id`` argument is accepted
+    for backward-compat but ignored.
 
     Resolution order:
-      1) per-creator override:  brand_text:{creator_id}
-      2) global override:       brand_text
-      3) CONFIG.brand_name
-      4) "Quiz"
+      1) global owner override: brand_text
+      2) CONFIG.brand_name
+      3) "Quiz"
     """
-    if creator_id:
-        per_user = get_setting(f"brand_text:{int(creator_id)}", "").strip()
-        if per_user:
-            return per_user
     override = get_setting("brand_text", "").strip()
     if override:
         return override
