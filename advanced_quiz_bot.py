@@ -5335,15 +5335,25 @@ async def _gated_handle_text_for_newexam(update: Update, context) -> None:
     chat = getattr(update, "effective_chat", None)
     try:
         if message and user and chat and chat.type == "private" and getattr(message, "text", None):
-            cmd, _a = base.extract_command(message.text, context.bot_data.get("bot_username", ""))
-            if (cmd or "").lower() == "newexam":
+            cmd, args = base.extract_command(message.text, context.bot_data.get("bot_username", ""))
+            cmd_l = (cmd or "").lower()
+            if cmd_l == "newexam":
                 ok, channel = await _creator_channel_check(context, user.id)
                 if not ok:
                     await _send_creator_join_prompt(context, chat.id, channel)
                     return
+            # Role-aware /start welcome (skip when it's a practice deep-link)
+            if cmd_l == "start" and not (args or "").strip().startswith("practice_"):
+                try:
+                    base.mark_started(user)
+                except Exception:
+                    pass
+                await _patched_refresh_user_panel_by_id(context, user.id)
+                return
     except Exception:
         pass
     return await _prev_handle_text_final(update, context)
+
 
 
 base.handle_text = _gated_handle_text_for_newexam
