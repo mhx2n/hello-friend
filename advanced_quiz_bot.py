@@ -3686,12 +3686,8 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
     q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
-    prefix_parts = [f'[{next_index}/{total}]']
-    if section_title:
-        prefix_parts.append(f'[{section_title}]')
-    if show_title:
-        prefix_parts.append(f'[{base.normalize_visual_text(session["title"])}]')
-    question_prefix = (' '.join(prefix_parts) + '\n') if prefix_parts else ''
+    prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
+    question_prefix = _build_question_prefix(next_index, total)
     poll_question = (question_prefix + _latex_to_pretty_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
