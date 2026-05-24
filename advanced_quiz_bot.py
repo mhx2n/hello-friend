@@ -340,6 +340,30 @@ if _orig_panel_router is not None:
     base.panel_router = _gated_panel_router
 
 
+# ============================================================
+# Step 2: CSV format help override (new column order with type, section)
+# ============================================================
+
+async def _patched_send_csv_format_help(message):
+    text = (
+        "<b>CSV Format</b>\n"
+        "Columns (in this exact order):\n"
+        "<code>questions, option1, option2, option3, option4, answer, explanation, type, section</code>\n\n"
+        "• <b>answer</b> — option number (1, 2, 3, 4) or exact option text.\n"
+        "• <b>explanation</b> — optional, shown after the answer.\n"
+        "• <b>type</b> — always <code>1</code>.\n"
+        "• <b>section</b> — always <code>1</code>.\n\n"
+        "<b>Example row</b>\n"
+        "<code>d/dx (e^x) এর মান কত?,e,x e^x,e^x,ln x,3,e^x এর অন্তরীকরণ e^x,1,1</code>\n\n"
+        "Extra option columns up to <code>option10</code> are supported. "
+        "Re-importing a CSV exported from this bot always works."
+    )
+    await base.safe_reply(message, text, parse_mode=base.ParseMode.HTML)
+
+
+base.send_csv_format_help = _patched_send_csv_format_help
+
+
 def clean_forwarded_text(text: str) -> str:
     value = base.normalize_visual_text(text or "")
     value = urllib.parse.unquote(value)
@@ -2407,8 +2431,9 @@ def _draft_question_rows_with_sections(draft_id: str) -> List[Dict[str, Any]]:
 
 def _build_draft_csv_bytes(draft: Any) -> bytes:
     """Export a draft as a CSV that can be re-imported by /importtext or upload.
-    Format matches send_csv_format_help:
-        questions, option1..option10, answer, explanation, section
+    Format (matches the screenshot the owner shared):
+        questions, option1..optionN, answer, explanation, type, section
+    `type` and `section` are always written as 1 so re-import never fails.
     """
     import csv as _csv
     questions = _draft_question_rows_with_sections(str(draft['id']))
@@ -2416,7 +2441,7 @@ def _build_draft_csv_bytes(draft: Any) -> bytes:
         raise ValueError('Draft has no questions to export.')
     max_opts = max((len(q['options']) for q in questions), default=2)
     max_opts = max(2, min(10, max_opts))
-    headers = ['questions'] + [f'option{i}' for i in range(1, max_opts + 1)] + ['answer', 'explanation', 'section']
+    headers = ['questions'] + [f'option{i}' for i in range(1, max_opts + 1)] + ['answer', 'explanation', 'type', 'section']
     buf = base.io.StringIO()
     writer = _csv.writer(buf, quoting=_csv.QUOTE_MINIMAL, lineterminator='\n')
     writer.writerow(headers)
@@ -2425,7 +2450,7 @@ def _build_draft_csv_bytes(draft: Any) -> bytes:
         opts += [''] * (max_opts - len(opts))
         correct_idx = int(q['correct_option'])
         answer = str(correct_idx + 1) if 0 <= correct_idx < len(q['options']) else ''
-        row = [str(q['question'])] + [str(o) for o in opts] + [answer, str(q['explanation'] or ''), str(q['section'] or 'General')]
+        row = [str(q['question'])] + [str(o) for o in opts] + [answer, str(q['explanation'] or ''), '1', '1']
         writer.writerow(row)
     # UTF-8 with BOM for Excel/Bangla compatibility
     return ('\ufeff' + buf.getvalue()).encode('utf-8')
