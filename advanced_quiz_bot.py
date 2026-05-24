@@ -257,6 +257,89 @@ base._FINAL_SUPPORTED_GROUP_COMMANDS = set(getattr(base, "_FINAL_SUPPORTED_GROUP
 }
 
 
+# ============================================================
+# Step 1: Restricted menus for non-owner / non-admin users
+# Free users only see: New Exam, My Drafts, Active Practice Link, Commands
+# Owner/admins keep the full panel.
+# ============================================================
+
+_orig_panel_keyboard = base.panel_keyboard
+_orig_panel_keyboard_for_user = base.panel_keyboard_for_user
+
+
+def _is_privileged(user_id: int) -> bool:
+    try:
+        if base.is_owner(user_id):
+            return True
+        if base.is_bot_admin(user_id):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _restricted_panel_keyboard(is_owner_user: bool):
+    if is_owner_user:
+        return _orig_panel_keyboard(True)
+    rows = [
+        [InlineKeyboardButton("➕ New Exam", callback_data="panel:new"),
+         InlineKeyboardButton("📚 My Drafts", callback_data="panel:drafts")],
+        [InlineKeyboardButton("📘 Commands", callback_data="panel:commands")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def _restricted_panel_keyboard_for_user(bot_username: str, user_id: int, is_owner_user: bool):
+    if _is_privileged(user_id):
+        return _orig_panel_keyboard_for_user(bot_username, user_id, True)
+    rows = [
+        [InlineKeyboardButton("➕ New Exam", callback_data="panel:new"),
+         InlineKeyboardButton("📚 My Drafts", callback_data="panel:drafts")],
+    ]
+    try:
+        practice_url = base._active_practice_url(bot_username, user_id)
+    except Exception:
+        practice_url = None
+    if practice_url:
+        rows.append([InlineKeyboardButton("🧪 Active Practice Link", url=practice_url)])
+    rows.append([InlineKeyboardButton("📘 Commands", callback_data="panel:commands")])
+    return InlineKeyboardMarkup(rows)
+
+
+base.panel_keyboard = _restricted_panel_keyboard
+base.panel_keyboard_for_user = _restricted_panel_keyboard_for_user
+
+
+# Server-side gate: even if a non-privileged user fires a hidden callback,
+# the panel router must reject restricted sections.
+_RESTRICTED_PANELS = {
+    "groups", "schedules", "start_exam", "stop_exam",
+    "admins", "logs", "broadcast",
+}
+
+_orig_panel_router = getattr(base, "panel_router", None)
+
+if _orig_panel_router is not None:
+    async def _gated_panel_router(update, context):
+        try:
+            q = getattr(update, "callback_query", None)
+            user = getattr(update, "effective_user", None)
+            data = (getattr(q, "data", "") if q else "") or ""
+            if data.startswith("panel:"):
+                key = data.split(":", 1)[1].split(":", 1)[0]
+                if key in _RESTRICTED_PANELS and user and not _is_privileged(user.id):
+                    try:
+                        await q.answer("Only admins or the owner can use this.", show_alert=True)
+                    except Exception:
+                        pass
+                    return
+        except Exception:
+            pass
+        return await _orig_panel_router(update, context)
+
+    base.panel_router = _gated_panel_router
+
+
 def clean_forwarded_text(text: str) -> str:
     value = base.normalize_visual_text(text or "")
     value = urllib.parse.unquote(value)
