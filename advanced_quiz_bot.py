@@ -1512,7 +1512,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("setbuttons", cmd_setbuttons), group=3)
     app.add_handler(CommandHandler("clearbuttons", cmd_clearbuttons), group=3)
     app.add_handler(CommandHandler("exporttheme", _cmd_export_theme), group=3)
+    app.add_handler(CommandHandler("stats", cmd_stats), group=3)
+    app.add_handler(CommandHandler("backupnow", cmd_backupnow), group=3)
+    app.add_handler(CommandHandler("restorebackup", cmd_restorebackup), group=3)
     return app
+
 
 
 base.build_app = build_app
