@@ -1056,6 +1056,8 @@ def owner_private_commands() -> List[BotCommand]:
         BotCommand("announce", "Announce to one chat"),
         BotCommand("setbrand", "Set quiz branding text"),
         BotCommand("brand", "Show current branding"),
+        BotCommand("setchannel", "Set required-join channel"),
+        BotCommand("getchannel", "Show required-join channel"),
         BotCommand("restart", "Restart bot"),
     ]
 
