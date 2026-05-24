@@ -2511,9 +2511,46 @@ document.getElementById('submitBtn').onclick=finishExam; renderSections();
 </script></body></html>'''
 
 
+# Google Fonts import for Bangla/Unicode support in HTML result reports
+_BANGLA_FONTS_CSS = (
+    "<link rel='preconnect' href='https://fonts.googleapis.com'>"
+    "<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>"
+    "<link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700;900&family=Inter:wght@400;600;700;900&display=swap' rel='stylesheet'>"
+)
+
+
+def _resolve_participant_name(participant_row: Any) -> str:
+    """Build a readable display name with full Bangla/Unicode support and graceful fallbacks."""
+    try:
+        raw = base.normalize_visual_text((participant_row['display_name'] if participant_row else '') or '')
+    except Exception:
+        raw = ''
+    if raw:
+        return raw
+    user_id = None
+    try:
+        user_id = int(participant_row['user_id'])
+    except Exception:
+        pass
+    if user_id:
+        try:
+            urow = base.DBH.fetchone('SELECT first_name, last_name, username FROM known_users WHERE user_id=?', (user_id,))
+        except Exception:
+            urow = None
+        if urow:
+            full = base.normalize_visual_text(' '.join(x for x in [urow['first_name'], urow['last_name']] if x))
+            if full:
+                return full
+            uname = base.normalize_visual_text(urow['username'] or '')
+            if uname:
+                return uname if uname.startswith('@') else f"@{uname}"
+        return f"User {user_id}"
+    return 'Student'
+
+
 def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[str, Any], ranking: List[Dict[str, Any]], review_items: List[Dict[str, Any]], section_items: List[Dict[str, Any]]) -> str:
     theme = _current_creator_theme(int(session['created_by']))
-    name = base.html_escape(base.normalize_visual_text(participant_row['display_name'] or 'Student'))
+    name = base.html_escape(_resolve_participant_name(participant_row))
     total_users = max(1, len(ranking))
     total_questions = int(session['total_questions'])
     correct = int(rank_item['correct'])
