@@ -934,6 +934,8 @@ def owner_private_commands() -> List[BotCommand]:
         BotCommand("logs", "Bot logs summary"),
         BotCommand("broadcast", "Broadcast to groups and users"),
         BotCommand("announce", "Announce to one chat"),
+        BotCommand("setbrand", "Set quiz branding text"),
+        BotCommand("brand", "Show current branding"),
         BotCommand("restart", "Restart bot"),
     ]
 
@@ -1013,6 +1015,8 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
                 "• /logs — memory, uptime, and recent errors",
                 "• /broadcast [pin] — broadcast to groups and users",
                 "• /announce CHAT_ID [pin] — announce to one chat",
+                "• /setbrand TEXT — set the quiz branding shown above every question",
+                "• /brand or /getbrand — show the current branding",
                 "• /restart — restart the bot process",
             ])
     else:
