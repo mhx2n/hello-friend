@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputTextMessageContent, Poll, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import Application, InlineQueryHandler
+from telegram.ext import Application, ContextTypes, InlineQueryHandler
 from telegram import InlineQueryResultArticle
 
 BASE_PATH = Path(__file__).resolve().with_name("bot_base.py")
