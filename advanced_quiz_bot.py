@@ -165,18 +165,21 @@ base.user_has_staff_access = user_has_staff_access
 
 def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     """
-    Professional poll header — clean multi-line alignment so the question
-    no longer collapses into a single hard-to-read line. Format:
+    Professional poll header — clean multi-line alignment so a forwarded
+    quiz stays visually aligned. Format:
 
         ✦ {brand}
         ━━━━━━━━━━━━━━
-        Q {n} / {total}  •  {section}
+        {n} / {total}  •  {section}
 
         {question text follows on its own block}
+
+    Note: the literal "Q" prefix is intentionally omitted so the index
+    reads as a plain "current / total" pair which looks cleaner.
     """
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\nQ {next_index} / {total}"
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
     if sec:
         head += f"  •  {sec}"
     return head + "\n\n"
