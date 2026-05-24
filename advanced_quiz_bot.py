@@ -132,6 +132,27 @@ base.set_setting = set_setting
 base.get_brand_text = get_brand_text
 
 
+# ============================================================
+# Step 4: Allow general users to create quizzes in DM.
+# Group chats remain admin-only (handled by existing chat-type
+# gates per command). Owner/admin-only commands (/addadmin,
+# /broadcast, /logs, /audit, /announce, /restart, /setbrand)
+# still gate themselves with is_owner()/is_bot_admin() directly,
+# so they remain safe even though staff-access is opened up here.
+# Draft mutation commands (settitle/delq/...) check owner_id of
+# the target draft, so a normal user can only edit their own.
+# ============================================================
+_real_user_has_staff_access = base.user_has_staff_access
+
+
+def user_has_staff_access(user_id: int) -> bool:
+    return True
+
+
+base.user_has_staff_access = user_has_staff_access
+
+
+
 def _build_question_prefix(next_index: int, total: int) -> str:
     """
     Professional poll header format:
