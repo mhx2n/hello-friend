@@ -382,6 +382,95 @@ if _orig_panel_router is not None:
 
 
 # ============================================================
+# Role-based /start welcome — regular users see a clean,
+# user-focused message; admins and owner keep the full briefing.
+# ============================================================
+
+async def _patched_refresh_user_panel_by_id(context, user_id: int):
+    bot_username = context.bot_data.get("bot_username", "")
+    privileged = _is_privileged(user_id)
+    is_owner_user = False
+    try:
+        is_owner_user = base.is_owner(user_id)
+    except Exception:
+        pass
+    brand = base.CONFIG.brand_name
+
+    if privileged:
+        active_draft = base.get_active_draft_id(user_id)
+        active_note = ""
+        if active_draft:
+            draft = base.get_draft(active_draft)
+            if draft:
+                active_note = (
+                    f"\n<b>Active draft</b>: <code>{active_draft}</code> — "
+                    f"{base.html_escape(draft['title'])}\n"
+                )
+        role_label = "Owner" if is_owner_user else "Admin"
+        text = (
+            f"<b>{base.html_escape(brand)}</b> — <i>{role_label} panel</i>\n\n"
+            f"Create drafts, import forwarded quiz polls or CSV files, run group "
+            f"exams, schedule them, and deliver text + PDF results.\n"
+            f"Drafts stay saved until you delete them manually.\n"
+            f"{active_note}\n"
+            f"<b>Quick flow</b>\n"
+            f"1) Create a new draft\n"
+            f"2) Forward quiz polls or upload a CSV\n"
+            f"3) Set a draft active\n"
+            f"4) Start it in a target group or schedule it\n"
+            f"5) Share the practice link from the draft card\n\n"
+            f"Type /commands to see every command available to you."
+        )
+        kb = base.panel_keyboard_for_user(bot_username, user_id, is_owner_user)
+    else:
+        text = (
+            f"<b>{base.html_escape(brand)}</b>\n\n"
+            f"Welcome! You can join any live exam in a group where this bot is "
+            f"added, or open a practice link shared by an admin to take it right "
+            f"here in your inbox.\n\n"
+            f"<b>What you can do</b>\n"
+            f"• Take group exams — your score will appear on the leaderboard.\n"
+            f"• Open practice links — solve at your own pace and get a result PDF.\n"
+            f"• /pauseq, /resumeq, /skipq, /stoptqex — control your private practice.\n"
+            f"• /commands — see the full command list.\n\n"
+            f"<i>Want to create your own exams? Join the required channel first, "
+            f"then tap “Create your own exam”.</i>"
+        )
+        rows = []
+        try:
+            practice_url = base._active_practice_url(bot_username, user_id)
+        except Exception:
+            practice_url = None
+        if practice_url:
+            rows.append([InlineKeyboardButton("🧪 Active Practice Link", url=practice_url)])
+        rows.append([InlineKeyboardButton("➕ Create your own exam", callback_data="panel:new")])
+        rows.append([InlineKeyboardButton("📘 Commands", callback_data="panel:commands")])
+        kb = InlineKeyboardMarkup(rows)
+
+    store = context.bot_data.setdefault("panel_home_message", {})
+    old_mid = store.get(user_id)
+    if old_mid:
+        try:
+            await base.safe_delete_message(context.bot, user_id, int(old_mid))
+        except Exception:
+            pass
+    sent = await context.bot.send_message(
+        user_id,
+        text,
+        parse_mode=base.ParseMode.HTML,
+        reply_markup=kb,
+        disable_web_page_preview=True,
+    )
+    store[user_id] = sent.message_id
+    return sent.message_id
+
+
+base._refresh_user_panel_by_id = _patched_refresh_user_panel_by_id
+
+
+
+
+# ============================================================
 # Step 2: CSV format help override (new column order with type, section)
 # ============================================================
 
