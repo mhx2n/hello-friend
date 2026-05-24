@@ -1687,7 +1687,7 @@ async def begin_or_advance_exam(context: ContextTypes.DEFAULT_TYPE, session_id: 
     try:
         _brand_fn = globals().get("get_brand_text")
         _brand = _brand_fn() if callable(_brand_fn) else (getattr(CONFIG, "brand_name", "") or "Quiz")
-        question_prefix = f"{_brand}\n\n[{next_index}/{total}]\n"
+        question_prefix = f"{_brand}\n[{next_index}/{total}]\n"
         poll_question = (question_prefix + q["question"]).strip()
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
