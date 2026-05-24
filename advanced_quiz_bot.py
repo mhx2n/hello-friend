@@ -1309,6 +1309,11 @@ def owner_private_commands() -> List[BotCommand]:
         BotCommand("brand", "Show current branding"),
         BotCommand("setchannel", "Set required-join channel"),
         BotCommand("getchannel", "Show required-join channel"),
+        BotCommand("setwelcome", "Set DM welcome message (HTML)"),
+        BotCommand("welcome", "Preview welcome message"),
+        BotCommand("clearwelcome", "Disable welcome message"),
+        BotCommand("setbuttons", "Configure welcome inline buttons"),
+        BotCommand("clearbuttons", "Remove welcome buttons"),
         BotCommand("restart", "Restart bot"),
     ]
 
