@@ -1139,6 +1139,9 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
                 "• /announce CHAT_ID [pin] — announce to one chat",
                 "• /setbrand TEXT — set the quiz branding shown above every question",
                 "• /brand or /getbrand — show the current branding",
+                "• /setchannel @Handle — require users to join a channel before using the bot",
+                "• /setchannel off — disable the required-join check",
+                "• /getchannel — show the current required channel",
                 "• /restart — restart the bot process",
             ])
     else:
