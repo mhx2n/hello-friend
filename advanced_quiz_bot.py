@@ -142,7 +142,7 @@ def _build_question_prefix(next_index: int, total: int) -> str:
         <question follows>
     """
     brand = get_brand_text()
-    return f"{brand}\n\n[{next_index}/{total}]\n"
+    return f"{brand}\n[{next_index}/{total}]\n"
 
 
 base._build_question_prefix = _build_question_prefix
