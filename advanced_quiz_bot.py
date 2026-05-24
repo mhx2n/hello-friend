@@ -3107,6 +3107,7 @@ def _export_theme_palette(owner_id: int, draft: Any) -> Dict[str, str]:
 
 def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     theme = _export_theme_palette(owner_id, draft)
+    title = base.html_escape(base.normalize_visual_text(str(draft['title'] or 'Exam')))
     questions = _draft_question_rows_with_sections(str(draft['id']))
     if not questions:
         raise ValueError('Draft has no valid questions.')
