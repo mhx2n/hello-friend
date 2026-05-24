@@ -118,18 +118,17 @@ def set_setting(key: str, value: str) -> None:
 
 
 def get_brand_text(creator_id: Optional[int] = None) -> str:
-    """Owner-configurable branding shown at the top of every quiz poll.
+    """Owner-only branding shown at the top of every quiz poll.
+
+    Per-user branding is intentionally disabled — only the bot owner can
+    configure this via /setbrand. The ``creator_id`` argument is accepted
+    for backward-compat but ignored.
 
     Resolution order:
-      1) per-creator override:  brand_text:{creator_id}
-      2) global override:       brand_text
-      3) CONFIG.brand_name
-      4) "Quiz"
+      1) global owner override: brand_text
+      2) CONFIG.brand_name
+      3) "Quiz"
     """
-    if creator_id:
-        per_user = get_setting(f"brand_text:{int(creator_id)}", "").strip()
-        if per_user:
-            return per_user
     override = get_setting("brand_text", "").strip()
     if override:
         return override
@@ -1037,39 +1036,13 @@ async def cmd_getbrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cmd_mybrand(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Per-user branding shown above every quiz they create. Available to all users."""
-    user = update.effective_user
+    """Disabled: only the bot owner can change quiz branding (via /setbrand)."""
     message = update.effective_message
-    if not user or not message:
+    if not message:
         return
-    new_brand = ""
-    if context.args:
-        new_brand = " ".join(context.args).strip()
-    else:
-        raw = (message.text or "").split(None, 1)
-        if len(raw) > 1:
-            new_brand = raw[1].strip()
-    key = f"brand_text:{int(user.id)}"
-    if not new_brand:
-        current = get_setting(key, "").strip() or get_brand_text(user.id)
-        await message.reply_text(
-            f"Your channel/quiz branding:\n<b>{base.html_escape(current)}</b>\n\n"
-            f"Set with: <code>/mybrand Your Channel Name</code>\n"
-            f"Clear with: <code>/mybrand off</code>",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-    if new_brand.lower() in {"off", "clear", "reset", "none"}:
-        set_setting(key, "")
-        await message.reply_text("Your personal branding cleared. The default brand will be used.")
-        return
-    if len(new_brand) > 80:
-        await message.reply_text("Brand text must be 80 characters or fewer.")
-        return
-    set_setting(key, new_brand)
     await message.reply_text(
-        f"Your branding updated. Every quiz you start will now show:\n\n<b>{base.html_escape(new_brand)}</b>",
-        parse_mode=ParseMode.HTML,
+        "Per-user branding is disabled. Only the bot owner can configure the "
+        "quiz branding header (it keeps forwarded quizzes neatly aligned).",
     )
 
 
@@ -1405,7 +1378,7 @@ def build_app() -> Application:
     app.add_handler(InlineQueryHandler(handle_inline_query), group=3)
     app.add_handler(CommandHandler("setbrand", cmd_setbrand), group=3)
     app.add_handler(CommandHandler("getbrand", cmd_getbrand), group=3)
-    app.add_handler(CommandHandler("mybrand", cmd_mybrand), group=3)
+    # /mybrand intentionally not registered — owner-only branding via /setbrand
     app.add_handler(CommandHandler("brand", cmd_getbrand), group=3)
     app.add_handler(CommandHandler("setchannel", cmd_setchannel), group=3)
     app.add_handler(CommandHandler("getchannel", cmd_getchannel), group=3)
