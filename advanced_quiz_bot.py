@@ -34,7 +34,7 @@ ENABLE_IMAGE_GENERATION = False
 # Advanced overlay: feasible additions without OCR / paid APIs
 # ============================================================
 
-CHECKMARKS = ("✅", "☑", "✔", "✓")
+CHECKMARKS = ("◆", "☑", "✓", "✓")
 TEXT_IMPORT_STATES = {"adv_await_import_text", "adv_await_clone_source"}
 SPEED_PRESETS = {
     "slow": (1.50, "slow"),
@@ -606,7 +606,7 @@ async def import_text_into_draft(message, context, draft_id: str, text: str, src
     if not parsed:
         await base.safe_reply(
             message,
-            "No valid questions were found. Supported format: one question block with options, and the correct option marked with ✅ or an Answer: line.",
+            "No valid questions were found. Supported format: one question block with options, and the correct option marked with ◆ or an Answer: line.",
         )
         return
     added = 0
@@ -630,7 +630,7 @@ async def import_text_into_draft(message, context, draft_id: str, text: str, src
         message.chat.id,
         message.from_user.id,
         draft_id,
-        header=f"✅ Text import complete. Added: {added} | Skipped duplicates: {skipped}",
+        header=f"◆ Text import complete. Added: {added} | Skipped duplicates: {skipped}",
     )
     if draft:
         base.audit(message.from_user.id, "import_text", draft_id, {"added": added, "skipped": skipped})
@@ -769,10 +769,10 @@ async def send_private_results(context, session_id: str) -> None:
         text = (
             f"<b>{base.html_escape(session['title'])}</b>\n"
             f"Your rank: <b>#{rank_item['rank']}</b> / {total_users}\n"
-            f"✅ Correct: <b>{correct}</b>\n"
-            f"❌ Wrong: <b>{wrong}</b>\n"
-            f"➖ Skipped: <b>{rank_item['skipped']}</b>\n"
-            f"🏁 Final Score: <b>{rank_item['score']}</b>\n\n"
+            f"◆ Correct: <b>{correct}</b>\n"
+            f"✕ Wrong: <b>{wrong}</b>\n"
+            f"− Skipped: <b>{rank_item['skipped']}</b>\n"
+            f"◉ Final Score: <b>{rank_item['score']}</b>\n\n"
             f"Accuracy: <b>{accuracy:.2f}%</b>\n"
             f"Percentage: <b>{percentage:.2f}%</b>\n"
             f"Percentile: <b>{percentile:.2f}</b>\n\n"
@@ -1482,7 +1482,7 @@ async def handle_poll_import(update: Update, context) -> None:
                 "quizbot_clone" if clone else "forwarded_quiz",
             )
             if ok:
-                header = f"✅ {'Clone' if clone else 'Draft'} updated. Added question Q{q_no}"
+                header = f"◆ {'Clone' if clone else 'Draft'} updated. Added question Q{q_no}"
             else:
                 header = "ℹ️ Duplicate question skipped."
             await base.send_draft_card(context, user.id, user.id, draft_id, header=header)
@@ -1532,7 +1532,7 @@ async def handle_text(update: Update, context) -> None:
             user.id,
             draft_id,
             header=(
-                "✅ Clone draft created.\n"
+                "◆ Clone draft created.\n"
                 "Now forward the quiz polls from @QuizBot to this bot inbox. Each forwarded quiz poll will be cleaned and added automatically.\n"
                 "Use /cloneend when finished."
             ),
@@ -1548,7 +1548,7 @@ async def handle_text(update: Update, context) -> None:
             base.set_user_state(user.id, "adv_await_import_text", {"draft_id": draft["id"]})
             await base.safe_reply(
                 message,
-                "Send the MCQ text now, or upload a .txt/.md/.json file.\n\nSupported format example:\n\n1. What is the capital of France?\nA. Berlin\nB. Madrid\nC. Paris ✅\nD. Rome\nExplanation: Paris is the capital.",
+                "Send the MCQ text now, or upload a .txt/.md/.json file.\n\nSupported format example:\n\n1. What is the capital of France?\nA. Berlin\nB. Madrid\nC. Paris ◆\nD. Rome\nExplanation: Paris is the capital.",
             )
             return
 
@@ -1569,7 +1569,7 @@ async def handle_text(update: Update, context) -> None:
                         user.id,
                         draft_id,
                         header=(
-                            "✅ Clone draft created.\n"
+                            "◆ Clone draft created.\n"
                             "Forward the quiz polls from @QuizBot to this bot inbox. Each forwarded quiz poll will be cleaned and added automatically.\n"
                             "Use /cloneend when finished."
                         ),
@@ -1589,7 +1589,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, "There is no active clone session.")
                 return
             stop_clone_session(user.id)
-            await base.send_draft_card(context, user.id, user.id, clone["draft_id"], header="✅ Clone session finished.")
+            await base.send_draft_card(context, user.id, user.id, clone["draft_id"], header="◆ Clone session finished.")
             return
 
         if cmd == "draftinfo":
@@ -1634,7 +1634,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, "Draft not found or title is empty.")
                 return
             base.DBH.execute("UPDATE drafts SET title=?, updated_at=? WHERE id=?", (base.normalize_visual_text(title_part), base.now_ts(), draft["id"]))
-            await base.send_draft_card(context, user.id, user.id, draft["id"], header="✅ Draft title updated.")
+            await base.send_draft_card(context, user.id, user.id, draft["id"], header="◆ Draft title updated.")
             return
 
         if cmd == "settime":
@@ -1648,7 +1648,7 @@ async def handle_text(update: Update, context) -> None:
                 return
             secs = max(5, int(parts[-1]))
             base.DBH.execute("UPDATE drafts SET question_time=?, updated_at=? WHERE id=?", (secs, base.now_ts(), draft["id"]))
-            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"✅ Default time updated to {secs} sec.")
+            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"◆ Default time updated to {secs} sec.")
             return
 
         if cmd == "setneg":
@@ -1666,7 +1666,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, "Draft not found, or you do not have access.")
                 return
             base.DBH.execute("UPDATE drafts SET negative_mark=?, updated_at=? WHERE id=?", (neg, base.now_ts(), draft["id"]))
-            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"✅ Negative mark updated to {neg}.")
+            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"◆ Negative mark updated to {neg}.")
             return
 
         if cmd == "shuffle":
@@ -1675,7 +1675,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, "Draft not found, or you do not have access.")
                 return
             shuffle_draft_questions(draft["id"])
-            await base.send_draft_card(context, user.id, user.id, draft["id"], header="✅ Draft questions shuffled.")
+            await base.send_draft_card(context, user.id, user.id, draft["id"], header="◆ Draft questions shuffled.")
             return
 
         if cmd == "delq":
@@ -1689,7 +1689,7 @@ async def handle_text(update: Update, context) -> None:
                 return
             numbers = parse_q_number_list(parts[1])
             removed = delete_question_numbers(draft["id"], numbers)
-            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"✅ Removed {removed} question(s).")
+            await base.send_draft_card(context, user.id, user.id, draft["id"], header=f"◆ Removed {removed} question(s).")
             return
 
         if cmd == "section":
@@ -1715,7 +1715,7 @@ async def handle_text(update: Update, context) -> None:
                 return
             q_time = int(time_part) if time_part.strip().isdigit() else None
             set_section(draft["id"], int(a), int(b), title or f"Section {a}-{b}", q_time)
-            await base.safe_reply(message, f"✅ Section added to <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
+            await base.safe_reply(message, f"◆ Section added to <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
             return
 
         if cmd == "sections":
@@ -1741,7 +1741,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, "Draft not found, or you do not have access.")
                 return
             clear_sections(draft["id"])
-            await base.safe_reply(message, f"✅ All sections removed from <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
+            await base.safe_reply(message, f"◆ All sections removed from <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
             return
 
     # Everyone can control their own private practice.
@@ -1807,7 +1807,7 @@ async def handle_text(update: Update, context) -> None:
                 return
             factor, mode_name = SPEED_PRESETS[mode]
             base.DBH.execute("UPDATE sessions SET speed_factor=?, speed_mode=? WHERE id=?", (factor, mode_name, session["id"]))
-            await base.safe_reply(message, f"⚙️ Speed set to <b>{mode_name}</b>. It will apply from the next question.", parse_mode=ParseMode.HTML)
+            await base.safe_reply(message, f"◇️ Speed set to <b>{mode_name}</b>. It will apply from the next question.", parse_mode=ParseMode.HTML)
             return
 
     return await _prev_handle_text(update, context)
@@ -1861,7 +1861,7 @@ async def send_admin_pdf_report(context, session_id: str, ranking: List[Dict[str
             await context.bot.send_document(
                 uid,
                 document=InputFile(base.io.BytesIO(pdf_bytes), filename=f"{base.pdf_safe_filename(session['title'])}_report.pdf"),
-                caption=f"📄 {base.normalize_visual_text(session['title'])} analysis report",
+                caption=f"▤ {base.normalize_visual_text(session['title'])} analysis report",
                 **kwargs,
             )
             if html_doc:
@@ -2157,9 +2157,9 @@ def _draft_prefix_state(draft: Any) -> bool:
 def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, header: str = "", bot_username: str = "") -> Tuple[str, InlineKeyboardMarkup]:
     draft = base.get_draft(draft_id)
     if not draft:
-        return _build_draft_browser_list_text_markup(user_id, page=page, header="⚠️ Draft not found.")
+        return _build_draft_browser_list_text_markup(user_id, page=page, header="▲️ Draft not found.")
     if int(draft['owner_id']) != user_id and not getattr(base, 'is_all_access_admin', lambda _x: False)(user_id):
-        return _build_draft_browser_list_text_markup(user_id, page=page, header="⚠️ You do not have access to this draft.")
+        return _build_draft_browser_list_text_markup(user_id, page=page, header="▲️ You do not have access to this draft.")
     sanitize_existing_draft_questions(draft_id)
     draft = base.get_draft(draft_id)
     q_count = _calc_total_draft_questions(draft_id)
@@ -2185,32 +2185,32 @@ def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, 
     practice_url = _build_practice_url_v4(bot_username, draft_id, int(draft['owner_id'])) if q_count > 0 else None
     kb_rows: List[List[InlineKeyboardButton]] = [
         [
-            InlineKeyboardButton('📂 Open Draft', callback_data=f'ux:open:{draft_id}:{page}'),
-            InlineKeyboardButton('🔄 Set Active', callback_data=f'ux:set:{draft_id}:{page}'),
+            InlineKeyboardButton('▸ Open Draft', callback_data=f'ux:open:{draft_id}:{page}'),
+            InlineKeyboardButton('↻ Set Active', callback_data=f'ux:set:{draft_id}:{page}'),
         ],
         [
-            InlineKeyboardButton(('⚙️ Prefix OFF' if _draft_prefix_state(draft) else '⚙️ Prefix ON'), callback_data=f'ux:prefix:{draft_id}:{page}'),
-            InlineKeyboardButton('🎲 Shuffle', callback_data=f'ux:shuffle:{draft_id}:{page}'),
+            InlineKeyboardButton(('◇️ Prefix OFF' if _draft_prefix_state(draft) else '◇️ Prefix ON'), callback_data=f'ux:prefix:{draft_id}:{page}'),
+            InlineKeyboardButton('◈ Shuffle', callback_data=f'ux:shuffle:{draft_id}:{page}'),
         ],
         [
-            InlineKeyboardButton('✏️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'),
+            InlineKeyboardButton('◐️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'),
             InlineKeyboardButton('⏱ Edit Time', callback_data=f'ux:ptime:{draft_id}:{page}'),
         ],
         [
-            InlineKeyboardButton('➖ Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'),
-            InlineKeyboardButton('➕ Add Questions', callback_data=f'ux:padd:{draft_id}:{page}'),
+            InlineKeyboardButton('− Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'),
+            InlineKeyboardButton('+ Add Questions', callback_data=f'ux:padd:{draft_id}:{page}'),
         ],
         [
-            InlineKeyboardButton('🗑 Delete Q', callback_data=f'ux:pdelq:{draft_id}:{page}'),
-            InlineKeyboardButton('📚 Sections', callback_data=f'ux:psection:{draft_id}:{page}'),
+            InlineKeyboardButton('× Delete Q', callback_data=f'ux:pdelq:{draft_id}:{page}'),
+            InlineKeyboardButton('▤ Sections', callback_data=f'ux:psection:{draft_id}:{page}'),
         ],
-        [InlineKeyboardButton('🌐 HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
+        [InlineKeyboardButton('◯ HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
     ]
     if practice_url:
-        kb_rows.append([InlineKeyboardButton('🧪 Practice Link', url=practice_url)])
+        kb_rows.append([InlineKeyboardButton('◊ Practice Link', url=practice_url)])
     kb_rows.append([
-        InlineKeyboardButton('🗑 Delete', callback_data=f'ux:del:{draft_id}:{page}'),
-        InlineKeyboardButton('📚 Draft Browser', callback_data=f'ux:browse:{page}'),
+        InlineKeyboardButton('× Delete', callback_data=f'ux:del:{draft_id}:{page}'),
+        InlineKeyboardButton('▤ Draft Browser', callback_data=f'ux:browse:{page}'),
     ])
     return "\n".join(lines).strip(), InlineKeyboardMarkup(kb_rows)
 
@@ -2236,7 +2236,7 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
     drafts = sorted(drafts, key=lambda r: int(r['updated_at']), reverse=True)
     if not drafts:
         text = ((header + "\n\n") if header else "") + "<b>Your Draft Browser</b>\n\nYou do not have any drafts yet."
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ Back', callback_data='panel:home')]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton('◂️ Back', callback_data='panel:home')]])
         return text, kb
     page = _clamp_draft_page_v4(page, len(drafts))
     start = page * DRAFTS_PAGE_SIZE_V4
@@ -2261,17 +2261,17 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
         lines.append(f"Prefix: <b>{prefix}</b>    Status: <b>{'ACTIVE' if is_active else ('Ready' if int(row['q_count'] or 0) > 0 else 'Draft')}</b>")
         lines.append("")
         kb_rows.append([
-            InlineKeyboardButton(f"📂 Open {row['id']}", callback_data=f"ux:open:{row['id']}:{page}"),
-            InlineKeyboardButton(("✅ Active" if is_active else "🔄 Active"), callback_data=f"ux:set:{row['id']}:{page}"),
+            InlineKeyboardButton(f"▸ Open {row['id']}", callback_data=f"ux:open:{row['id']}:{page}"),
+            InlineKeyboardButton(("◆ Active" if is_active else "↻ Active"), callback_data=f"ux:set:{row['id']}:{page}"),
         ])
     nav_row: List[InlineKeyboardButton] = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton('⬅️ Previous', callback_data=f'ux:browse:{page - 1}'))
+        nav_row.append(InlineKeyboardButton('◂️ Previous', callback_data=f'ux:browse:{page - 1}'))
     if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton('➡️ Next', callback_data=f'ux:browse:{page + 1}'))
+        nav_row.append(InlineKeyboardButton('▸️ Next', callback_data=f'ux:browse:{page + 1}'))
     if nav_row:
         kb_rows.append(nav_row)
-    kb_rows.append([InlineKeyboardButton('⬅️ Back', callback_data='panel:home')])
+    kb_rows.append([InlineKeyboardButton('◂️ Back', callback_data='panel:home')])
     return "\n".join(lines).strip(), InlineKeyboardMarkup(kb_rows)
 
 
@@ -2537,13 +2537,13 @@ async def send_private_results(context, session_id: str) -> None:
         if section_data and (len(section_data) > 1 or section_data[0]['title'] != 'General'):
             section_lines.append('<b>Section Analysis</b>')
             for item in section_data:
-                section_lines.append(f"• {base.html_escape(item['title'])}: ✅ {item['correct']}  ❌ {item['wrong']}  ➖ {item['skipped']}")
+                section_lines.append(f"• {base.html_escape(item['title'])}: ◆ {item['correct']}  ✕ {item['wrong']}  − {item['skipped']}")
             section_lines.append('')
         message_text = (
             f"<b>{base.html_escape(session['title'])}</b>\n"
             f"Rank: <b>#{rank_item['rank']}</b> / {total_users}\n"
             f"Score: <b>{rank_item['score']}</b>    Negative: <b>{session['negative_mark']}</b>\n"
-            f"✅ Correct: <b>{correct}</b>    ❌ Wrong: <b>{wrong}</b>    ➖ Skipped: <b>{skipped}</b>\n"
+            f"◆ Correct: <b>{correct}</b>    ✕ Wrong: <b>{wrong}</b>    − Skipped: <b>{skipped}</b>\n"
             f"Accuracy: <b>{accuracy:.2f}%</b>    Percentage: <b>{percentage:.2f}%</b>    Percentile: <b>{percentile:.2f}</b>\n\n"
             + ("\n".join(section_lines) if section_lines else "") +
             f"<b>Correct</b>\n{', '.join(correct_links) or '—'}\n\n"
@@ -2553,7 +2553,7 @@ async def send_private_results(context, session_id: str) -> None:
         buttons: List[List[InlineKeyboardButton]] = []
         practice_url = _build_practice_url_v4(context.bot_data.get('bot_username', ''), str(session['draft_id']), int(session['created_by']))
         if practice_url:
-            buttons.append([InlineKeyboardButton('🔁 Try Again', url=practice_url)])
+            buttons.append([InlineKeyboardButton('↺ Try Again', url=practice_url)])
         with suppress(TelegramError):
             await context.bot.send_message(user_id, message_text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None, disable_web_page_preview=True)
         with suppress(Exception):
@@ -2675,7 +2675,7 @@ async def handle_document_upload(update: Update, context) -> None:
     if chat.type == 'private' and base.user_has_staff_access(user.id) and lower_name.endswith('.csv'):
         draft_id = base.get_active_draft_id(user.id)
         if draft_id:
-            await send_draft_card(context, user.id, user.id, draft_id, header='✅ Draft updated from CSV import.')
+            await send_draft_card(context, user.id, user.id, draft_id, header='◆ Draft updated from CSV import.')
             with suppress(Exception):
                 await base.safe_delete_message(context.bot, chat.id, message.message_id)
     return result
@@ -2705,7 +2705,7 @@ async def handle_poll_import(update: Update, context) -> None:
                 'quizbot_clone' if clone else 'forwarded_quiz',
             )
             sanitize_existing_draft_questions(draft_id)
-            header = f"✅ {'Clone' if clone else 'Draft'} updated. Added question Q{q_no}." if ok and q_no else 'ℹ️ Duplicate or invalid question skipped.'
+            header = f"◆ {'Clone' if clone else 'Draft'} updated. Added question Q{q_no}." if ok and q_no else 'ℹ️ Duplicate or invalid question skipped.'
             await send_draft_card(context, user.id, user.id, draft_id, header=header)
             with suppress(Exception):
                 await base.safe_delete_message(context.bot, chat.id, message.message_id)
@@ -2736,7 +2736,7 @@ async def callback_router(update: Update, context) -> None:
     if data == 'panel:drafts' or data.startswith('ux:'):
         await query.answer()
         if not user or not base.user_has_staff_access(user.id):
-            warn_kb = InlineKeyboardMarkup([[InlineKeyboardButton('📘 Commands', callback_data='panel:commands')]])
+            warn_kb = InlineKeyboardMarkup([[InlineKeyboardButton('▤ Commands', callback_data='panel:commands')]])
             await base.panel_show_message(query.message, user.id if user else 0, base.warning_text(), reply_markup=warn_kb)
             return
         parts = data.split(':')
@@ -2758,33 +2758,33 @@ async def callback_router(update: Update, context) -> None:
             draft_id, page = parts[2], int(parts[3])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
             else:
                 base.set_active_draft(user.id, draft_id)
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'✅ Active draft set to <code>{draft_id}</code>.', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'◆ Active draft set to <code>{draft_id}</code>.', context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
         if action == 'del' and len(parts) >= 4:
             draft_id, page = parts[2], int(parts[3])
             draft = base.get_draft(draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft already deleted.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft already deleted.')
             elif int(draft['owner_id']) != user.id and not base.is_owner(user.id):
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Only the draft owner or bot owner can delete this draft.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Only the draft owner or bot owner can delete this draft.')
             else:
                 base.delete_draft(draft_id, user.id)
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, f'🗑 Draft <code>{draft_id}</code> deleted.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, f'× Draft <code>{draft_id}</code> deleted.')
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
         if action == 'prefix' and len(parts) >= 4:
             draft_id, page = parts[2], int(parts[3])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
             else:
                 new_val = 0 if _draft_prefix_state(draft) else 1
                 base.DBH.execute('UPDATE drafts SET show_title_prefix=?, updated_at=? WHERE id=?', (new_val, base.now_ts(), draft_id))
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f"✅ Title prefix turned <b>{'ON' if new_val else 'OFF'}</b>.", context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f"◆ Title prefix turned <b>{'ON' if new_val else 'OFF'}</b>.", context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
         if action == 'shuffle' and len(parts) >= 4:
@@ -2792,16 +2792,16 @@ async def callback_router(update: Update, context) -> None:
             draft = resolve_editable_draft(user.id, draft_id)
             if draft:
                 shuffle_draft_questions(draft_id)
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '✅ Draft questions shuffled.', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '◆ Draft questions shuffled.', context.bot_data.get('bot_username', ''))
             else:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
         if action in {'ptitle','ptime','pneg','padd','pdelq','psection'} and len(parts) >= 4:
             draft_id, page = parts[2], int(parts[3])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
                 await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
                 return
             prompt_map = {
@@ -2820,7 +2820,7 @@ async def callback_router(update: Update, context) -> None:
             draft_id, page = parts[2], int(parts[3])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
                 await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
                 return
             try:
@@ -2830,16 +2830,16 @@ async def callback_router(update: Update, context) -> None:
                     document=InputFile(base.io.BytesIO(html_doc.encode('utf-8')), filename=f"{base.pdf_safe_filename(draft['title'])}_practice.html"),
                     caption='Interactive HTML practice exam with section selection, auto-scroll navigation, and MathJax support.',
                 )
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '✅ HTML practice exam exported.', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '◆ HTML practice exam exported.', context.bot_data.get('bot_username', ''))
             except Exception as exc:
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ HTML export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'▲️ HTML export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
         if action == 'csv' and len(parts) >= 4:
             draft_id, page = parts[2], int(parts[3])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '▲️ Draft not found or access denied.')
                 await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
                 return
             try:
@@ -2849,9 +2849,9 @@ async def callback_router(update: Update, context) -> None:
                     document=InputFile(base.io.BytesIO(csv_bytes), filename=f"{base.pdf_safe_filename(draft['title'])}.csv"),
                     caption='CSV export — re-importable. Use /importtext or upload back to restore the draft.',
                 )
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '✅ CSV exported.', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '◆ CSV exported.', context.bot_data.get('bot_username', ''))
             except Exception as exc:
-                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ CSV export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'▲️ CSV export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
     return await _prev_callback_router_v4(update, context)
@@ -2890,34 +2890,34 @@ async def handle_text(update: Update, context) -> None:
         draft = resolve_editable_draft(user.id, draft_id)
         base.clear_user_state(user.id)
         if not draft:
-            await _show_draft_browser(context, user.id, page=page, header='⚠️ Draft not found or access denied.')
+            await _show_draft_browser(context, user.id, page=page, header='▲️ Draft not found or access denied.')
             return
         txt = message.text.strip()
         header = ''
         if state == 'adv2_edit_title':
             if not txt:
-                header = '⚠️ Title cannot be empty.'
+                header = '▲️ Title cannot be empty.'
             else:
                 base.DBH.execute('UPDATE drafts SET title=?, updated_at=? WHERE id=?', (base.normalize_visual_text(txt), base.now_ts(), draft_id))
-                header = '✅ Draft title updated.'
+                header = '◆ Draft title updated.'
         elif state == 'adv2_edit_time':
             if not txt.isdigit():
-                header = '⚠️ Send only a positive number.'
+                header = '▲️ Send only a positive number.'
             else:
                 secs = max(5, int(txt))
                 base.DBH.execute('UPDATE drafts SET question_time=?, updated_at=? WHERE id=?', (secs, base.now_ts(), draft_id))
-                header = f'✅ Default time updated to <b>{secs}</b> sec.'
+                header = f'◆ Default time updated to <b>{secs}</b> sec.'
         elif state == 'adv2_edit_neg':
             try:
                 neg = float(txt)
                 base.DBH.execute('UPDATE drafts SET negative_mark=?, updated_at=? WHERE id=?', (neg, base.now_ts(), draft_id))
-                header = f'✅ Negative mark updated to <b>{neg}</b>.'
+                header = f'◆ Negative mark updated to <b>{neg}</b>.'
             except Exception:
-                header = '⚠️ Send a valid decimal value. Example: <code>0.25</code>'
+                header = '▲️ Send a valid decimal value. Example: <code>0.25</code>'
         elif state == 'adv2_add_questions':
             parsed = parse_marked_questions_from_text(txt)
             if not parsed:
-                header = '⚠️ No valid questions were found in the text you sent.'
+                header = '▲️ No valid questions were found in the text you sent.'
             else:
                 added = 0
                 for item in parsed:
@@ -2925,25 +2925,25 @@ async def handle_text(update: Update, context) -> None:
                     if ok:
                         added += 1
                 sanitize_existing_draft_questions(draft_id)
-                header = f'✅ Draft updated. Added <b>{added}</b> question(s).'
+                header = f'◆ Draft updated. Added <b>{added}</b> question(s).'
         elif state == 'adv2_del_questions':
             numbers = parse_q_number_list(txt)
             removed = delete_question_numbers(draft_id, numbers)
             sanitize_existing_draft_questions(draft_id)
-            header = f'✅ Removed <b>{removed}</b> question(s).'
+            header = f'◆ Removed <b>{removed}</b> question(s).'
         elif state == 'adv2_add_section':
             parts = [x.strip() for x in txt.split('|')]
             if len(parts) < 2 or '-' not in parts[0]:
-                header = '⚠️ Use: <code>1-10 | Biology | 30</code>'
+                header = '▲️ Use: <code>1-10 | Biology | 30</code>'
             else:
                 a, b = [x.strip() for x in parts[0].split('-', 1)]
                 if not (a.isdigit() and b.isdigit()):
-                    header = '⚠️ Use numeric ranges like <code>1-10</code>.'
+                    header = '▲️ Use numeric ranges like <code>1-10</code>.'
                 else:
                     title = parts[1] if len(parts) >= 2 else f'Section {a}-{b}'
                     q_time = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
                     set_section(draft_id, int(a), int(b), title, q_time)
-                    header = f'✅ Section added: <b>{base.html_escape(title)}</b>.'
+                    header = f'◆ Section added: <b>{base.html_escape(title)}</b>.'
         with suppress(Exception):
             await base.safe_delete_message(context.bot, chat.id, message.message_id)
         text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, header, context.bot_data.get('bot_username', ''))
@@ -3098,7 +3098,7 @@ def insert_questions_into_draft(draft_id: str, items: List[Dict[str, Any]], inse
 def _build_question_manager_text_markup(user_id: int, draft_id: str, page: int = 0, header: str = '') -> Tuple[str, InlineKeyboardMarkup]:
     draft = base.get_draft(draft_id)
     if not draft:
-        return _build_draft_browser_list_text_markup(user_id, header='⚠️ Draft not found.')
+        return _build_draft_browser_list_text_markup(user_id, header='▲️ Draft not found.')
     sanitize_existing_draft_questions(draft_id)
     rows = list(base.get_draft_questions(draft_id))
     total = len(rows)
@@ -3116,16 +3116,16 @@ def _build_question_manager_text_markup(user_id: int, draft_id: str, page: int =
         qno = int(row['q_no'])
         lines.append(f'<b>Q{qno}</b> — {base.html_escape(_question_preview_line(row))}')
         lines.append('')
-        kb_rows.append([InlineKeyboardButton(f'➕ After Q{qno}', callback_data=f'uxq:add:{draft_id}:{qno}:{page}'), InlineKeyboardButton(f'🗑 Q{qno}', callback_data=f'uxq:del:{draft_id}:{qno}:{page}')])
-    kb_rows.append([InlineKeyboardButton('➕ Add at Start', callback_data=f'uxq:add:{draft_id}:0:{page}'), InlineKeyboardButton('➕ Add at End', callback_data=f'uxq:add:{draft_id}:{total}:{page}')])
+        kb_rows.append([InlineKeyboardButton(f'+ After Q{qno}', callback_data=f'uxq:add:{draft_id}:{qno}:{page}'), InlineKeyboardButton(f'× Q{qno}', callback_data=f'uxq:del:{draft_id}:{qno}:{page}')])
+    kb_rows.append([InlineKeyboardButton('+ Add at Start', callback_data=f'uxq:add:{draft_id}:0:{page}'), InlineKeyboardButton('+ Add at End', callback_data=f'uxq:add:{draft_id}:{total}:{page}')])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton('⬅️ Prev', callback_data=f'uxq:browse:{draft_id}:{page-1}'))
+        nav.append(InlineKeyboardButton('◂️ Prev', callback_data=f'uxq:browse:{draft_id}:{page-1}'))
     if page < pages - 1:
-        nav.append(InlineKeyboardButton('➡️ Next', callback_data=f'uxq:browse:{draft_id}:{page+1}'))
+        nav.append(InlineKeyboardButton('▸️ Next', callback_data=f'uxq:browse:{draft_id}:{page+1}'))
     if nav:
         kb_rows.append(nav)
-    kb_rows.append([InlineKeyboardButton('📂 Draft Detail', callback_data=f'ux:open:{draft_id}:0'), InlineKeyboardButton('📚 Draft Browser', callback_data='ux:browse:0')])
+    kb_rows.append([InlineKeyboardButton('▸ Draft Detail', callback_data=f'ux:open:{draft_id}:0'), InlineKeyboardButton('▤ Draft Browser', callback_data='ux:browse:0')])
     return '\n'.join(lines).strip(), InlineKeyboardMarkup(kb_rows)
 
 
@@ -3134,7 +3134,7 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
     drafts = sorted(drafts, key=lambda r: int(r['updated_at']), reverse=True)
     if not drafts:
         text = ((header + '\n\n') if header else '') + '<b>Your Draft Browser</b>\n\nNo drafts yet.'
-        return text, InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ Back', callback_data='panel:home')]])
+        return text, InlineKeyboardMarkup([[InlineKeyboardButton('◂️ Back', callback_data='panel:home')]])
     page = _clamp_draft_page_v4(page, len(drafts))
     start = page * DRAFTS_PAGE_SIZE_V4
     end = min(start + DRAFTS_PAGE_SIZE_V4, len(drafts))
@@ -3152,22 +3152,22 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
         lines.append(f'<b>{idx}. {base.html_escape(row["title"])}</b>')
         lines.append(f'Code: <code>{row["id"]}</code> • Q: <b>{row["q_count"]}</b> • {row["question_time"]} sec • -{row["negative_mark"]} • Prefix {prefix} • {status}')
         lines.append('')
-        kb_rows.append([InlineKeyboardButton(f'📂 {row["id"]}', callback_data=f'ux:open:{row["id"]}:{page}'), InlineKeyboardButton('✅ Active' if active_id == row['id'] else '🔄 Active', callback_data=f'ux:set:{row["id"]}:{page}')])
+        kb_rows.append([InlineKeyboardButton(f'▸ {row["id"]}', callback_data=f'ux:open:{row["id"]}:{page}'), InlineKeyboardButton('◆ Active' if active_id == row['id'] else '↻ Active', callback_data=f'ux:set:{row["id"]}:{page}')])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton('⬅️ Previous', callback_data=f'ux:browse:{page-1}'))
+        nav.append(InlineKeyboardButton('◂️ Previous', callback_data=f'ux:browse:{page-1}'))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton('➡️ Next', callback_data=f'ux:browse:{page+1}'))
+        nav.append(InlineKeyboardButton('▸️ Next', callback_data=f'ux:browse:{page+1}'))
     if nav:
         kb_rows.append(nav)
-    kb_rows.append([InlineKeyboardButton('⬅️ Back', callback_data='panel:home')])
+    kb_rows.append([InlineKeyboardButton('◂️ Back', callback_data='panel:home')])
     return '\n'.join(lines).strip(), InlineKeyboardMarkup(kb_rows)
 
 
 def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, header: str = '', bot_username: str = '') -> Tuple[str, InlineKeyboardMarkup]:
     draft = base.get_draft(draft_id)
     if not draft:
-        return _build_draft_browser_list_text_markup(user_id, page=page, header='⚠️ Draft not found.')
+        return _build_draft_browser_list_text_markup(user_id, page=page, header='▲️ Draft not found.')
     sanitize_existing_draft_questions(draft_id)
     draft = base.get_draft(draft_id)
     q_count = _calc_total_draft_questions(draft_id)
@@ -3177,16 +3177,16 @@ def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, 
     lines += ['<b>Draft Details</b>', f'Title: <b>{base.html_escape(draft["title"])}</b>', f'Code: <code>{draft["id"]}</code>', f'Questions: <b>{q_count}</b>', f'Time / question: <b>{draft["question_time"]} sec</b>', f'Negative / wrong: <b>{draft["negative_mark"]}</b>', f'Title prefix in poll: <b>{"ON" if _draft_prefix_state(draft) else "OFF"}</b>', f'Created: <b>{base.fmt_dt(draft["created_at"])}</b>', f'Updated: <b>{base.fmt_dt(draft["updated_at"])}</b>', '', '<b>Sections</b>', *_section_summary_for_draft(draft_id)]
     practice_url = _build_practice_url_v4(bot_username, draft_id, int(draft['owner_id'])) if q_count > 0 else None
     kb_rows = [
-        [InlineKeyboardButton('📂 Open Draft', callback_data=f'ux:open:{draft_id}:{page}'), InlineKeyboardButton('🔄 Set Active', callback_data=f'ux:set:{draft_id}:{page}')],
-        [InlineKeyboardButton(f'⚙️ Prefix {"OFF" if _draft_prefix_state(draft) else "ON"}', callback_data=f'ux:prefix:{draft_id}:{page}'), InlineKeyboardButton('🎲 Shuffle', callback_data=f'ux:shuffle:{draft_id}:{page}')],
-        [InlineKeyboardButton('✏️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'), InlineKeyboardButton('⏱ Edit Time', callback_data=f'ux:ptime:{draft_id}:{page}')],
-        [InlineKeyboardButton('➖ Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'), InlineKeyboardButton('🧩 Manage Questions', callback_data=f'uxq:browse:{draft_id}:0')],
-        [InlineKeyboardButton('📚 Sections', callback_data=f'ux:psection:{draft_id}:{page}'), InlineKeyboardButton('🌐 HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
-        [InlineKeyboardButton('📄 CSV Export', callback_data=f'ux:csv:{draft_id}:{page}')],
+        [InlineKeyboardButton('▸ Open Draft', callback_data=f'ux:open:{draft_id}:{page}'), InlineKeyboardButton('↻ Set Active', callback_data=f'ux:set:{draft_id}:{page}')],
+        [InlineKeyboardButton(f'◇️ Prefix {"OFF" if _draft_prefix_state(draft) else "ON"}', callback_data=f'ux:prefix:{draft_id}:{page}'), InlineKeyboardButton('◈ Shuffle', callback_data=f'ux:shuffle:{draft_id}:{page}')],
+        [InlineKeyboardButton('◐️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'), InlineKeyboardButton('⏱ Edit Time', callback_data=f'ux:ptime:{draft_id}:{page}')],
+        [InlineKeyboardButton('− Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'), InlineKeyboardButton('◆ Manage Questions', callback_data=f'uxq:browse:{draft_id}:0')],
+        [InlineKeyboardButton('▤ Sections', callback_data=f'ux:psection:{draft_id}:{page}'), InlineKeyboardButton('◯ HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
+        [InlineKeyboardButton('▤ CSV Export', callback_data=f'ux:csv:{draft_id}:{page}')],
     ]
     if practice_url:
-        kb_rows.append([InlineKeyboardButton('🧪 Practice Link', url=practice_url)])
-    kb_rows.append([InlineKeyboardButton('🗑 Delete Draft', callback_data=f'ux:del:{draft_id}:{page}'), InlineKeyboardButton('📚 Draft Browser', callback_data=f'ux:browse:{page}')])
+        kb_rows.append([InlineKeyboardButton('◊ Practice Link', url=practice_url)])
+    kb_rows.append([InlineKeyboardButton('× Delete Draft', callback_data=f'ux:del:{draft_id}:{page}'), InlineKeyboardButton('▤ Draft Browser', callback_data=f'ux:browse:{page}')])
     return '\n'.join(lines).strip(), InlineKeyboardMarkup(kb_rows)
 
 
@@ -3294,17 +3294,17 @@ async def send_private_results(context, session_id: str) -> None:
         percentile = 100.0 if total_users <= 1 else ((total_users - int(rank_item['rank'])) / (total_users - 1)) * 100.0
         duration_seconds = int(rank_item.get('time_seconds') or 0)
         duration_label = base.fmt_elapsed(duration_seconds)
-        lines = [f'<b>🏁 {base.html_escape(session["title"])}</b>', '', f'Rank: <b>#{rank_item["rank"]}</b> / {total_users}', f'Score: <b>{rank_item["score"]}</b>', f'Negative / wrong: <b>{session["negative_mark"]}</b>', f'✅ Correct: <b>{correct}</b>', f'❌ Wrong: <b>{wrong}</b>', f'➖ Skipped: <b>{skipped}</b>', f'🎯 Accuracy: <b>{accuracy:.2f}%</b>', f'📊 Percentage: <b>{percentage:.2f}%</b>', f'🏆 Percentile: <b>{percentile:.2f}</b>', f'⏱ Time: <b>{duration_label}</b>', '']
+        lines = [f'<b>◉ {base.html_escape(session["title"])}</b>', '', f'Rank: <b>#{rank_item["rank"]}</b> / {total_users}', f'Score: <b>{rank_item["score"]}</b>', f'Negative / wrong: <b>{session["negative_mark"]}</b>', f'◆ Correct: <b>{correct}</b>', f'✕ Wrong: <b>{wrong}</b>', f'− Skipped: <b>{skipped}</b>', f'◉ Accuracy: <b>{accuracy:.2f}%</b>', f'▦ Percentage: <b>{percentage:.2f}%</b>', f'◉ Percentile: <b>{percentile:.2f}</b>', f'⏱ Time: <b>{duration_label}</b>', '']
         if section_data and (len(section_data) > 1 or section_data[0]['title'] != 'General'):
             lines.append('<b>Section Analysis</b>')
             for item in section_data:
-                lines.append(f'• {base.html_escape(item["title"])} — ✅ {item["correct"]}  ❌ {item["wrong"]}  ➖ {item["skipped"]}')
+                lines.append(f'• {base.html_escape(item["title"])} — ◆ {item["correct"]}  ✕ {item["wrong"]}  − {item["skipped"]}')
             lines.append('')
         lines += ['<b>Correct</b>', ', '.join(buckets['correct']) or '—', '', '<b>Wrong</b>', ', '.join(buckets['wrong']) or '—', '', '<b>Skipped</b>', ', '.join(buckets['skipped']) or '—']
         buttons = []
         practice_url = _build_practice_url_v4(context.bot_data.get('bot_username', ''), str(session['draft_id']), int(session['created_by']))
         if practice_url:
-            buttons.append([InlineKeyboardButton('🔁 Try Again', url=practice_url)])
+            buttons.append([InlineKeyboardButton('↺ Try Again', url=practice_url)])
         with suppress(TelegramError):
             await context.bot.send_message(user_id, '\n'.join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None, disable_web_page_preview=True)
 
@@ -3424,7 +3424,7 @@ async def callback_router(update: Update, context) -> None:
             draft_id, q_no, page = parts[2], _safe_int(parts[3]), _safe_int(parts[4])
             draft = resolve_editable_draft(user.id, draft_id)
             if not draft:
-                text, kb = _build_draft_browser_list_text_markup(user.id, header='⚠️ Draft not found.')
+                text, kb = _build_draft_browser_list_text_markup(user.id, header='▲️ Draft not found.')
                 await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
                 return
             base.set_user_state(user.id, 'adv2_add_questions', {'draft_id': draft_id, 'page': page, 'insert_after': q_no})
@@ -3435,7 +3435,7 @@ async def callback_router(update: Update, context) -> None:
             draft_id, q_no, page = parts[2], _safe_int(parts[3]), _safe_int(parts[4])
             removed = delete_question_numbers(draft_id, [q_no])
             sanitize_existing_draft_questions(draft_id)
-            text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'✅ Removed <b>{removed}</b> question(s).')
+            text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'◆ Removed <b>{removed}</b> question(s).')
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
     return await _prev_callback_router_v5(update, context)
@@ -3461,7 +3461,7 @@ async def handle_text(update: Update, context) -> None:
         draft = resolve_editable_draft(user.id, draft_id)
         base.clear_user_state(user.id)
         if not draft:
-            await _show_draft_browser(context, user.id, page=page, header='⚠️ Draft not found or access denied.')
+            await _show_draft_browser(context, user.id, page=page, header='▲️ Draft not found or access denied.')
             return
         insert_after = payload.get('insert_after')
         parsed_insert, body = _extract_insert_position_from_text(message.text.strip())
@@ -3469,7 +3469,7 @@ async def handle_text(update: Update, context) -> None:
             insert_after = parsed_insert
         parsed = parse_marked_questions_from_text(body)
         if not parsed:
-            text, kb = _build_question_manager_text_markup(user.id, draft_id, page, '⚠️ No valid questions were found in the text you sent.')
+            text, kb = _build_question_manager_text_markup(user.id, draft_id, page, '▲️ No valid questions were found in the text you sent.')
             await base.panel_show_message(message, user.id, text, reply_markup=kb)
             return
         clean_items = []
@@ -3482,7 +3482,7 @@ async def handle_text(update: Update, context) -> None:
         with suppress(Exception):
             await base.safe_delete_message(context.bot, chat.id, message.message_id)
         where = 'start' if _safe_int(insert_after) <= 0 else ('end' if insert_after is None else f'after Q{insert_after}')
-        text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'✅ Draft updated. Added <b>{added}</b> question(s) at <b>{where}</b>.')
+        text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'◆ Draft updated. Added <b>{added}</b> question(s) at <b>{where}</b>.')
         await base.panel_show_message(message, user.id, text, reply_markup=kb)
         return
     return await _prev_handle_text_v6(update, context)
@@ -4127,27 +4127,27 @@ async def send_private_results(context, session_id: str) -> None:
             '',
             #f'Rank: <b>#{rank_item["rank"]}</b> / {total_users}',
             f'৻ꪆ Score: <b>{rank_item["score"]}</b>\n',
-            f'✅ Correct: <b>{correct}</b>   ❌ Wrong: <b>{wrong}</b>   ➖ Skipped: <b>{skipped}</b>\n',
+            f'◆ Correct: <b>{correct}</b>   ✕ Wrong: <b>{wrong}</b>   − Skipped: <b>{skipped}</b>\n',
             f'⏱ Time: <b>{duration_label}</b>',
-            f'🎯 Accuracy: <b>{accuracy:.2f}%</b>\n📊 Percentage: <b>{percentage:.2f}%</b>',
+            f'◉ Accuracy: <b>{accuracy:.2f}%</b>\n▦ Percentage: <b>{percentage:.2f}%</b>',
             f'Negative / wrong: <b>{session["negative_mark"]}</b>',
             ''
         ]
         if section_data and (len(section_data) > 1 or section_data[0]['title'] != 'General'):
             lines.append('<b>Section Analysis</b>')
             for item in section_data:
-                lines.append(f'• {base.html_escape(item["title"])} — ✅ {item["correct"]}  ❌ {item["wrong"]}  ➖ {item["skipped"]}')
+                lines.append(f'• {base.html_escape(item["title"])} — ◆ {item["correct"]}  ✕ {item["wrong"]}  − {item["skipped"]}')
             lines.append('')
         lines.extend(['<b>Correct</b>', ', '.join(buckets['correct']) or '—', '', '<b>Wrong</b>', ', '.join(buckets['wrong']) or '—', '', '<b>Skipped</b>', ', '.join(buckets['skipped']) or '—'])
         buttons: List[List[InlineKeyboardButton]] = []
         practice_url = _build_practice_url_v4(context.bot_data.get('bot_username', ''), str(session['draft_id']), int(session['created_by']))
         if practice_url:
-            buttons.append([InlineKeyboardButton('🔁 Try Again', url=practice_url)])
+            buttons.append([InlineKeyboardButton('↺ Try Again', url=practice_url)])
         with suppress(TelegramError):
             await context.bot.send_message(user_id, '\n'.join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None, disable_web_page_preview=True)
         with suppress(Exception):
             html_doc = render_user_result_html(session, p, rank_item, ranking, review_items, section_data)
-            await context.bot.send_document(user_id, document=InputFile(base.io.BytesIO(html_doc.encode('utf-8')), filename=f"{base.pdf_safe_filename(session['title'])}_result.html"), caption='📄 TXQEbot HTML result report.')
+            await context.bot.send_document(user_id, document=InputFile(base.io.BytesIO(html_doc.encode('utf-8')), filename=f"{base.pdf_safe_filename(session['title'])}_result.html"), caption='▤ TXQEbot HTML result report.')
 
 
 base.send_private_results = send_private_results
