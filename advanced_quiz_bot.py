@@ -468,6 +468,16 @@ async def _patched_refresh_user_panel_by_id(context, user_id: int):
 base._refresh_user_panel_by_id = _patched_refresh_user_panel_by_id
 
 
+async def _patched_send_panel(update, context):
+    user = getattr(update, "effective_user", None)
+    if not user:
+        return
+    await _patched_refresh_user_panel_by_id(context, user.id)
+
+
+base.send_panel = _patched_send_panel
+
+
 
 
 # ============================================================
