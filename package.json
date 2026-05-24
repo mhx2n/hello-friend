@@ -3,6 +3,6 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "echo 'Python project — run: python advanced_quiz_bot.py' && sleep infinity"
+    "dev": "node -e \"require('http').createServer((q,r)=>r.end('Python bot project — see advanced_quiz_bot.py')).listen(process.env.PORT||8080)\""
   }
 }
