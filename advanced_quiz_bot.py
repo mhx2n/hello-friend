@@ -4396,7 +4396,8 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
         f"<div class='stat'><div class='label'>Percentile</div><div class='value'>{percentile:.2f}</div></div>",
         f"<div class='stat'><div class='label'>Negative / wrong</div><div class='value'>{session['negative_mark']}</div></div>",
     ])
-    return (tpl.replace('__TITLE__', title)
+    return (tpl.replace('<head>', '<head>' + _BANGLA_FONTS_CSS, 1)
+              .replace('__TITLE__', title)
               .replace('__NAME__', name)
               .replace('__SUMMARY__', summary_html)
               .replace('__TOP_ROWS__', ''.join(top_rows))
