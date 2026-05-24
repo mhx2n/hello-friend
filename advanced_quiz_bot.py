@@ -635,11 +635,7 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
 
     try:
-        prefix_parts = [f"[{next_index}/{total}]"]
-        if section_title:
-            prefix_parts.append(f"[{section_title}]")
-        prefix_parts.append(f"[{base.normalize_visual_text(session['title'])}]")
-        question_prefix = " ".join(prefix_parts) + "\n"
+        question_prefix = _build_question_prefix(next_index, total)
         poll_question = (question_prefix + str(q["question"])).strip()
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
