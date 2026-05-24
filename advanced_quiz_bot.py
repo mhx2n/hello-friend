@@ -2862,6 +2862,18 @@ async def handle_text(update: Update, context) -> None:
     cmd, args = base.extract_command(message.text, context.bot_data.get('bot_username', ''))
     cmd = (cmd or '').lower()
 
+    # Step 8: send welcome on /start in DM (when configured, no deep-link payload).
+    if (
+        cmd == 'start'
+        and chat.type == 'private'
+        and not (args or '').strip().startswith('practice_')
+        and get_welcome_text()
+    ):
+        if await base.is_required_channel_member(context, user.id):
+            await send_welcome_if_configured(context, message, user)
+        # fall through to base handler which sends panel + handles join gate
+
+
     if chat.type == 'private' and state in _ADV_EDIT_STATES and not cmd:
         draft_id = str(payload.get('draft_id') or '')
         page = int(payload.get('page') or 0)
