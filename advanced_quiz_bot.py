@@ -1957,6 +1957,33 @@ def _draft_question_rows_with_sections(draft_id: str) -> List[Dict[str, Any]]:
     return items
 
 
+def _build_draft_csv_bytes(draft: Any) -> bytes:
+    """Export a draft as a CSV that can be re-imported by /importtext or upload.
+    Format matches send_csv_format_help:
+        questions, option1..option10, answer, explanation, section
+    """
+    import csv as _csv
+    questions = _draft_question_rows_with_sections(str(draft['id']))
+    if not questions:
+        raise ValueError('Draft has no questions to export.')
+    max_opts = max((len(q['options']) for q in questions), default=2)
+    max_opts = max(2, min(10, max_opts))
+    headers = ['questions'] + [f'option{i}' for i in range(1, max_opts + 1)] + ['answer', 'explanation', 'section']
+    buf = base.io.StringIO()
+    writer = _csv.writer(buf, quoting=_csv.QUOTE_MINIMAL, lineterminator='\n')
+    writer.writerow(headers)
+    for q in questions:
+        opts = list(q['options'])[:max_opts]
+        opts += [''] * (max_opts - len(opts))
+        correct_idx = int(q['correct_option'])
+        answer = str(correct_idx + 1) if 0 <= correct_idx < len(q['options']) else ''
+        row = [str(q['question'])] + [str(o) for o in opts] + [answer, str(q['explanation'] or ''), str(q['section'] or 'General')]
+        writer.writerow(row)
+    # UTF-8 with BOM for Excel/Bangla compatibility
+    return ('\ufeff' + buf.getvalue()).encode('utf-8')
+
+
+
 def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     theme = _current_creator_theme(owner_id)
     questions = _draft_question_rows_with_sections(str(draft['id']))
@@ -2443,6 +2470,25 @@ async def callback_router(update: Update, context) -> None:
                 text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ HTML export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
             return
+        if action == 'csv' and len(parts) >= 4:
+            draft_id, page = parts[2], int(parts[3])
+            draft = resolve_editable_draft(user.id, draft_id)
+            if not draft:
+                text, kb = _build_draft_browser_list_text_markup(user.id, page, '⚠️ Draft not found or access denied.')
+                await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
+                return
+            try:
+                csv_bytes = _build_draft_csv_bytes(draft)
+                await context.bot.send_document(
+                    user.id,
+                    document=InputFile(base.io.BytesIO(csv_bytes), filename=f"{base.pdf_safe_filename(draft['title'])}.csv"),
+                    caption='CSV export — re-importable. Use /importtext or upload back to restore the draft.',
+                )
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, '✅ CSV exported.', context.bot_data.get('bot_username', ''))
+            except Exception as exc:
+                text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, f'⚠️ CSV export failed: <code>{base.html_escape(str(exc))}</code>', context.bot_data.get('bot_username', ''))
+            await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
+            return
     return await _prev_callback_router_v4(update, context)
 
 
@@ -2759,6 +2805,7 @@ def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, 
         [InlineKeyboardButton('✏️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'), InlineKeyboardButton('⏱ Edit Time', callback_data=f'ux:ptime:{draft_id}:{page}')],
         [InlineKeyboardButton('➖ Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'), InlineKeyboardButton('🧩 Manage Questions', callback_data=f'uxq:browse:{draft_id}:0')],
         [InlineKeyboardButton('📚 Sections', callback_data=f'ux:psection:{draft_id}:{page}'), InlineKeyboardButton('🌐 HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
+        [InlineKeyboardButton('📄 CSV Export', callback_data=f'ux:csv:{draft_id}:{page}')],
     ]
     if practice_url:
         kb_rows.append([InlineKeyboardButton('🧪 Practice Link', url=practice_url)])
