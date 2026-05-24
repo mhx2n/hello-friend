@@ -1398,6 +1398,11 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
                 "• /setchannel @Handle — require users to join a channel before using the bot",
                 "• /setchannel off — disable the required-join check",
                 "• /getchannel — show the current required channel",
+                "• /setwelcome &lt;html&gt; — set DM welcome (placeholders: {name} {first_name} {last_name} {username} {id} {mention})",
+                "• /welcome — preview welcome message",
+                "• /clearwelcome — disable welcome",
+                "• /setbuttons — configure welcome inline buttons (one row per line, '|' separates buttons, 'Label - URL')",
+                "• /clearbuttons — remove welcome buttons",
                 "• /restart — restart the bot process",
             ])
     else:
