@@ -1957,6 +1957,33 @@ def _draft_question_rows_with_sections(draft_id: str) -> List[Dict[str, Any]]:
     return items
 
 
+def _build_draft_csv_bytes(draft: Any) -> bytes:
+    """Export a draft as a CSV that can be re-imported by /importtext or upload.
+    Format matches send_csv_format_help:
+        questions, option1..option10, answer, explanation, section
+    """
+    import csv as _csv
+    questions = _draft_question_rows_with_sections(str(draft['id']))
+    if not questions:
+        raise ValueError('Draft has no questions to export.')
+    max_opts = max((len(q['options']) for q in questions), default=2)
+    max_opts = max(2, min(10, max_opts))
+    headers = ['questions'] + [f'option{i}' for i in range(1, max_opts + 1)] + ['answer', 'explanation', 'section']
+    buf = base.io.StringIO()
+    writer = _csv.writer(buf, quoting=_csv.QUOTE_MINIMAL, lineterminator='\n')
+    writer.writerow(headers)
+    for q in questions:
+        opts = list(q['options'])[:max_opts]
+        opts += [''] * (max_opts - len(opts))
+        correct_idx = int(q['correct_option'])
+        answer = str(correct_idx + 1) if 0 <= correct_idx < len(q['options']) else ''
+        row = [str(q['question'])] + [str(o) for o in opts] + [answer, str(q['explanation'] or ''), str(q['section'] or 'General')]
+        writer.writerow(row)
+    # UTF-8 with BOM for Excel/Bangla compatibility
+    return ('\ufeff' + buf.getvalue()).encode('utf-8')
+
+
+
 def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     theme = _current_creator_theme(owner_id)
     questions = _draft_question_rows_with_sections(str(draft['id']))
