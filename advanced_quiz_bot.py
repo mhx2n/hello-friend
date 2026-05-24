@@ -185,8 +185,24 @@ _membership_cache: Dict[int, Tuple[float, bool]] = {}
 _MEMBERSHIP_TTL = 300.0  # seconds
 
 
+def get_required_channel() -> str:
+    """Owner-configurable required channel. Empty string = disabled.
+    DB setting overrides env-var default.
+    """
+    stored = (get_setting('required_channel', None) or '').strip()
+    if stored == '__OFF__':
+        return ''
+    if stored:
+        return stored if stored.startswith('@') else f'@{stored}'
+    env_default = (getattr(base.CONFIG, 'required_channel', '') or '').strip()
+    return env_default
+
+
+base.get_required_channel = get_required_channel
+
+
 async def _patched_is_required_channel_member(context, user_id: int) -> bool:
-    channel = (getattr(base.CONFIG, "required_channel", "") or "").strip()
+    channel = get_required_channel()
     if not channel:
         return True
     now = _time.time()
