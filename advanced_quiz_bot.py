@@ -797,7 +797,11 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
 
     try:
-        question_prefix = _build_question_prefix(next_index, total, creator_id=int(session.get("created_by") or 0) if hasattr(session, "get") else int(session["created_by"] or 0), section_title=section_title)
+        try:
+            _creator_id = int(session["created_by"] or 0)
+        except Exception:
+            _creator_id = 0
+        question_prefix = _build_question_prefix(next_index, total, creator_id=_creator_id, section_title=section_title)
         poll_question = (question_prefix + str(q["question"])).strip()
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
