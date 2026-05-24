@@ -2821,7 +2821,7 @@ async def callback_router(update: Update, context) -> None:
             return
         if action == 'del' and len(parts) >= 5:
             draft_id, q_no, page = parts[2], _safe_int(parts[3]), _safe_int(parts[4])
-            removed = delete_single_question(draft_id, q_no)
+            removed = delete_question_numbers(draft_id, [q_no])
             sanitize_existing_draft_questions(draft_id)
             text, kb = _build_question_manager_text_markup(user.id, draft_id, page, f'✅ Removed <b>{removed}</b> question(s).')
             await base.panel_show_message(query.message, user.id, text, reply_markup=kb)
