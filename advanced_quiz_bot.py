@@ -2139,12 +2139,8 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
         base_seconds = int(q['question_time_override'] or session['question_time'] or 30)
         speed_factor = float(session['speed_factor'] or 1.0)
         effective_seconds = max(5, int(round(base_seconds * speed_factor)))
-        prefix_parts = [f"[{next_index}/{total}]"]
-        if section_title:
-            prefix_parts.append(f"[{section_title}]")
-        if show_title:
-            prefix_parts.append(f"[{base.normalize_visual_text(session['title'])}]")
-        question_prefix = (' '.join(prefix_parts) + '\n') if prefix_parts else ''
+        prefix_parts = [f"[{next_index}/{total}]"]  # kept for caption fallback
+        question_prefix = _build_question_prefix(next_index, total)
         poll_question = (question_prefix + q_text).strip() or q_text or f"Question {next_index}"
         if len(poll_question) > 300:
             allowed_q = max(10, 300 - len(question_prefix))
