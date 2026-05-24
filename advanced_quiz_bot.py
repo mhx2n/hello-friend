@@ -117,8 +117,19 @@ def set_setting(key: str, value: str) -> None:
     )
 
 
-def get_brand_text() -> str:
-    """Owner-configurable branding shown at the top of every quiz poll."""
+def get_brand_text(creator_id: Optional[int] = None) -> str:
+    """Owner-configurable branding shown at the top of every quiz poll.
+
+    Resolution order:
+      1) per-creator override:  brand_text:{creator_id}
+      2) global override:       brand_text
+      3) CONFIG.brand_name
+      4) "Quiz"
+    """
+    if creator_id:
+        per_user = get_setting(f"brand_text:{int(creator_id)}", "").strip()
+        if per_user:
+            return per_user
     override = get_setting("brand_text", "").strip()
     if override:
         return override
@@ -153,20 +164,27 @@ base.user_has_staff_access = user_has_staff_access
 
 
 
-def _build_question_prefix(next_index: int, total: int) -> str:
+def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     """
-    Professional poll header format:
+    Professional poll header — clean multi-line alignment so the question
+    no longer collapses into a single hard-to-read line. Format:
 
-        {owner branding}
-        <blank line>
-        [{n}/{total}]
-        <question follows>
+        ✦ {brand}
+        ━━━━━━━━━━━━━━
+        Q {n} / {total}  •  {section}
+
+        {question text follows on its own block}
     """
-    brand = get_brand_text()
-    return f"{brand}\n[{next_index}/{total}]\n"
+    brand = get_brand_text(creator_id)
+    sec = (section_title or "").strip()
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\nQ {next_index} / {total}"
+    if sec:
+        head += f"  •  {sec}"
+    return head + "\n\n"
 
 
 base._build_question_prefix = _build_question_prefix
+
 
 
 # ------------------------------------------------------------
