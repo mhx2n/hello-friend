@@ -1242,6 +1242,11 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("setchannel", cmd_setchannel), group=3)
     app.add_handler(CommandHandler("getchannel", cmd_getchannel), group=3)
     app.add_handler(CommandHandler("clearchannel", cmd_setchannel), group=3)
+    app.add_handler(CommandHandler("setwelcome", cmd_setwelcome), group=3)
+    app.add_handler(CommandHandler("clearwelcome", cmd_clearwelcome), group=3)
+    app.add_handler(CommandHandler("welcome", cmd_welcome_preview), group=3)
+    app.add_handler(CommandHandler("setbuttons", cmd_setbuttons), group=3)
+    app.add_handler(CommandHandler("clearbuttons", cmd_clearbuttons), group=3)
     return app
 
 
