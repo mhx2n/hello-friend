@@ -1354,6 +1354,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("welcome", cmd_welcome_preview), group=3)
     app.add_handler(CommandHandler("setbuttons", cmd_setbuttons), group=3)
     app.add_handler(CommandHandler("clearbuttons", cmd_clearbuttons), group=3)
+    app.add_handler(CommandHandler("exporttheme", _cmd_export_theme), group=3)
     return app
 
 
