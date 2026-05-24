@@ -2759,6 +2759,7 @@ def _build_draft_detail_text_markup(user_id: int, draft_id: str, page: int = 0, 
         [InlineKeyboardButton('✏️ Edit Title', callback_data=f'ux:ptitle:{draft_id}:{page}'), InlineKeyboardButton('⏱ Edit Time', callback_data=f'ux:ptime:{draft_id}:{page}')],
         [InlineKeyboardButton('➖ Edit Negative', callback_data=f'ux:pneg:{draft_id}:{page}'), InlineKeyboardButton('🧩 Manage Questions', callback_data=f'uxq:browse:{draft_id}:0')],
         [InlineKeyboardButton('📚 Sections', callback_data=f'ux:psection:{draft_id}:{page}'), InlineKeyboardButton('🌐 HTML Export', callback_data=f'ux:html:{draft_id}:{page}')],
+        [InlineKeyboardButton('📄 CSV Export', callback_data=f'ux:csv:{draft_id}:{page}')],
     ]
     if practice_url:
         kb_rows.append([InlineKeyboardButton('🧪 Practice Link', url=practice_url)])
