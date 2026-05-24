@@ -2311,13 +2311,21 @@ def _smart_clean_question_text(raw: str) -> str:
     value = re.sub(r"\bvia\b\s+@?[A-Za-z0-9_]+", " ", value, flags=re.I)
     value = URL_RE.sub(" ", value)
     value = USERNAME_RE.sub(" ", value)
-    value = re.sub(r"\s+", " ", value).strip(" -–—|•[]")
+    # PRESERVE original line breaks so forwarded multi-line questions
+    # render the same way the user saw them. Only collapse runs of
+    # horizontal whitespace and trim excess blank lines.
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = value.strip(" \t\n-–—|•[]")
     if value:
         return value
     fallback = re.sub(r"/view_[A-Za-z0-9_]+", " ", original)
     fallback = COUNTER_RE.sub("", fallback)
-    fallback = re.sub(r"\s+", " ", fallback).strip(" -–—|•[]")
-    return fallback
+    fallback = re.sub(r"[ \t]+", " ", fallback)
+    fallback = re.sub(r" *\n *", "\n", fallback)
+    fallback = re.sub(r"\n{3,}", "\n\n", fallback)
+    return fallback.strip(" \t\n-–—|•[]")
 
 
 def _smart_clean_option_text(raw: str) -> str:
