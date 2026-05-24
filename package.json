@@ -1,0 +1,8 @@
+{
+  "name": "advanced-quiz-bot",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "echo 'Python project — run: python advanced_quiz_bot.py' && sleep infinity"
+  }
+}
