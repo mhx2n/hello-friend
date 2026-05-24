@@ -5141,7 +5141,7 @@ def _parse_numbered_question_format(text: str) -> List[Dict[str, Any]]:
                 options[-1] = base.normalize_visual_text(options[-1] + ' ' + line).strip()
             else:
                 explanation_parts.append(line)
-        question = _smart_clean_question_text(' '.join(question_parts))
+        question = _smart_clean_question_text('\n'.join(question_parts))
         if correct_idx is None and answer_ref:
             correct_idx = parse_answer_ref(answer_ref, options)
         if question and len(options) >= 2 and correct_idx is not None:
