@@ -5600,7 +5600,10 @@ try:
                 # let original chain handle deep-link practice
                 return await _prev_handle_text_final(update, context)
             try:
-                already_started = base.has_started(user.id) if hasattr(base, "has_started") else False
+                row = base.DBH.fetchone(
+                    "SELECT started FROM known_users WHERE user_id=?", (user.id,)
+                )
+                already_started = bool(row and int(row["started"] or 0))
             except Exception:
                 already_started = False
             try:
