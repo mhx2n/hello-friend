@@ -5246,7 +5246,7 @@ def _parse_numbered_question_format(text: str) -> List[Dict[str, Any]]:
                 'question': question,
                 'options': options,
                 'correct_option': int(correct_idx),
-                'explanation': _smart_clean_explanation_text(' '.join(explanation_parts)),
+                'explanation': _resolved_explanation_text('\n'.join(explanation_parts)),
             })
     return parsed
 
@@ -5269,7 +5269,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                 opts = [_smart_clean_option_text(str(x)) for x in opts if str(x).strip()]
                 ans = parse_answer_ref(str(item.get('answer') or item.get('correct') or ''), opts)
                 if q and len(opts) >= 2 and ans is not None:
-                    items.append({'question': q, 'options': opts, 'correct_option': ans, 'explanation': _smart_clean_explanation_text(str(item.get('explanation') or ''))})
+                    items.append({'question': q, 'options': opts, 'correct_option': ans, 'explanation': _resolved_explanation_text(str(item.get('explanation') or ''))})
             if items:
                 return items
     except Exception:
