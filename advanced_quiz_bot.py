@@ -5654,7 +5654,7 @@ except Exception:
 
 
 try:
-    _DARK_GREEN = "#15803d"
+    _DARK_GREEN = "#166534"
     _orig_render_scroll_exam_html = render_scroll_exam_html
 
     def render_scroll_exam_html(draft, owner_id):  # type: ignore[no-redef]
@@ -5672,6 +5672,9 @@ try:
             ".brand-line{font-weight:800;color:var(--accent);font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
             ".brand-line{font-weight:800;color:" + _DARK_GREEN + ";font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
         )
+        html_doc = html_doc.replace("background:var(--accent);color:#fff", "background:" + _DARK_GREEN + ";color:#fff")
+        html_doc = html_doc.replace("background:var(--accent);color:#08111d", "background:" + _DARK_GREEN + ";color:#fff")
+        html_doc = html_doc.replace("color:#c8f7bf", "color:" + _DARK_GREEN)
         return html_doc
 except Exception:
     pass
