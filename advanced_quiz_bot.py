@@ -266,6 +266,32 @@ async def _send_creator_join_prompt(context, chat_id: int, channel: str) -> None
         )
 
 
+def get_default_explanation_text() -> str:
+    return get_setting("default_question_explanation", "").strip()
+
+
+def _resolved_explanation_text(raw: str) -> str:
+    value = _smart_clean_explanation_text(raw)
+    if value:
+        return value
+    return _smart_clean_explanation_text(get_default_explanation_text())
+
+
+def user_welcome_verify_keyboard() -> Optional[InlineKeyboardMarkup]:
+    rows: List[List[InlineKeyboardButton]] = []
+    saved_rows = get_welcome_buttons()
+    if saved_rows:
+        for row in saved_rows:
+            btns = [InlineKeyboardButton(text=b["text"], url=b["url"]) for b in row]
+            if btns:
+                rows.append(btns)
+    channel = get_required_channel()
+    if channel:
+        rows.append([InlineKeyboardButton("✅ Join Required Channel", url=f"https://t.me/{channel.lstrip('@')}")])
+        rows.append([InlineKeyboardButton("🔄 Verify & Continue", callback_data="panel:verify_join")])
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
 base.is_required_channel_member = _patched_is_required_channel_member
 base._creator_channel_check = _creator_channel_check
 base._send_creator_join_prompt = _send_creator_join_prompt
