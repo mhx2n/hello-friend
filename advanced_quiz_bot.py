@@ -1495,6 +1495,46 @@ async def cmd_clearbuttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await message.reply_text("Welcome buttons removed.")
 
 
+async def cmd_setdefaultexplanation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can set the default explanation.")
+        return
+    raw = (message.text or "").split(None, 1)
+    body = raw[1].strip() if len(raw) > 1 else ""
+    if not body:
+        current = get_default_explanation_text() or "(not set)"
+        await message.reply_text(
+            "<b>Default Explanation</b>\n\n"
+            "Use this to auto-fill explanation text for questions that do not have one.\n\n"
+            "Example:\n"
+            "<code>/setdefaultexplanation ব্যাখ্যা পরে ক্লাসে আলোচনা করা হবে।</code>\n\n"
+            f"<b>Current:</b>\n<code>{base.html_escape(current)}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if len(body) > 500:
+        await message.reply_text("Default explanation is too long (max 500 chars).")
+        return
+    set_setting("default_question_explanation", body)
+    await message.reply_text("Default explanation saved.")
+
+
+async def cmd_cleardefaultexplanation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can clear the default explanation.")
+        return
+    set_setting("default_question_explanation", "")
+    await message.reply_text("Default explanation cleared.")
+
+
 async def send_welcome_if_configured(context, message, user) -> bool:
     """Send the configured welcome message + buttons. Returns True if sent."""
     template = get_welcome_text()
