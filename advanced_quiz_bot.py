@@ -5718,41 +5718,17 @@ try:
             except Exception:
                 joined = True
 
-            if not joined or not already_started:
-                channel = base.CONFIG.required_channel
-                # Try the owner-configured welcome first.
-                sent_welcome = False
-                try:
-                    if get_welcome_text():
-                        sent_welcome = await send_welcome_if_configured(
-                            context, message, user
-                        )
-                except Exception:
-                    sent_welcome = False
-                if not joined:
-                    kb = InlineKeyboardMarkup([[InlineKeyboardButton(
-                        "✅ Join Required Channel",
-                        url=f"https://t.me/{channel.lstrip('@')}",
-                    )], [InlineKeyboardButton("🔄 I have joined — continue", callback_data="panel:home")]])
-                    intro = (
-                        f"<b>{base.html_escape(base.CONFIG.brand_name)}</b>\n\n"
-                        f"Welcome! You can take any exam this bot runs in a group, "
-                        f"or open a practice link shared with you — no setup needed.\n\n"
-                        f"<b>Want to create your own exams?</b>\n"
-                        f"Join our channel {base.html_escape(channel)} first, then tap "
-                        f"<i>“I have joined — continue”</i> to unlock exam creation."
-                    )
-                    with suppress(Exception):
-                        await context.bot.send_message(
-                            user.id, intro,
-                            parse_mode=base.ParseMode.HTML,
-                            reply_markup=kb,
-                            disable_web_page_preview=True,
-                        )
-                    return
-                # Joined but first-ever /start without a welcome configured —
-                # fall through to the regular user panel.
+            if not already_started:
+                await _delete_pending_welcome_message(context, user.id)
+                await _show_first_start_welcome(context, message, user)
+                return
 
+            if not joined:
+                await _delete_pending_welcome_message(context, user.id)
+                await _show_first_start_welcome(context, message, user)
+                return
+
+            await _delete_pending_welcome_message(context, user.id)
             await _patched_refresh_user_panel_by_id(context, user.id)
         except Exception:
             with suppress(Exception):
