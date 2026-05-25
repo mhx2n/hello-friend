@@ -1502,16 +1502,41 @@ async def send_welcome_if_configured(context, message, user) -> bool:
         return False
     try:
         rendered = render_welcome(template, user)
-        await message.reply_text(
+        sent = await message.reply_text(
             rendered,
             parse_mode=ParseMode.HTML,
-            reply_markup=welcome_keyboard(),
+            reply_markup=user_welcome_verify_keyboard() or welcome_keyboard(),
             disable_web_page_preview=True,
         )
+        context.bot_data.setdefault("pending_welcome_message", {})[int(user.id)] = int(sent.message_id)
         return True
     except TelegramError as exc:
         base.logger.warning("welcome send failed: %s", exc)
         return False
+
+
+async def _delete_pending_welcome_message(context, user_id: int) -> None:
+    pending = context.bot_data.setdefault("pending_welcome_message", {})
+    mid = pending.pop(int(user_id), None)
+    if mid:
+        with suppress(Exception):
+            await base.safe_delete_message(context.bot, int(user_id), int(mid))
+
+
+async def _show_first_start_welcome(context, message, user) -> None:
+    template = get_welcome_text() or (
+        f"<b>Welcome, {{name}}!</b>\n\n"
+        f"You can join any live exam in a group where this bot is added, or open a practice link in your inbox.\n\n"
+        f"To create your own exam, join the required channel first, then tap verify."
+    )
+    rendered = render_welcome(template, user)
+    sent = await message.reply_text(
+        rendered,
+        parse_mode=ParseMode.HTML,
+        reply_markup=user_welcome_verify_keyboard(),
+        disable_web_page_preview=True,
+    )
+    context.bot_data.setdefault("pending_welcome_message", {})[int(user.id)] = int(sent.message_id)
 
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
