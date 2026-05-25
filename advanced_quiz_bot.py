@@ -5607,6 +5607,17 @@ if _prev_callback_router_final is not None:
             q = getattr(update, "callback_query", None)
             user = getattr(update, "effective_user", None)
             data = (getattr(q, "data", "") or "") if q else ""
+            if data == "panel:verify_join" and user:
+                ok, _channel = await _creator_channel_check(context, user.id)
+                if ok:
+                    await _delete_pending_welcome_message(context, user.id)
+                    with suppress(Exception):
+                        await q.answer("Verified.")
+                    await _patched_refresh_user_panel_by_id(context, user.id)
+                else:
+                    with suppress(Exception):
+                        await q.answer("Please join the channel first.", show_alert=True)
+                return
             if data.startswith("panel:new") and user:
                 ok, channel = await _creator_channel_check(context, user.id)
                 if not ok:
