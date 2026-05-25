@@ -921,6 +921,51 @@ def create_session_from_draft(draft_id: str, chat_id: int, actor_id: int) -> Opt
 base.create_session_from_draft = create_session_from_draft
 
 
+_previous_start_practice_from_token = getattr(base, "start_practice_from_token", None)
+
+
+async def start_practice_from_token(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    base.record_user(user)
+    base.mark_started(user)
+    row = base.get_practice_link_by_token(token)
+    if not row:
+        await base.safe_reply(message, "This practice link is invalid or disabled.")
+        return
+    q_count_row = base.DBH.fetchone("SELECT COUNT(*) AS c FROM draft_questions WHERE draft_id=?", (row["draft_id"],))
+    q_count = int(q_count_row["c"] if q_count_row else 0)
+    if q_count <= 0:
+        await base.safe_reply(message, "This practice exam does not have any questions yet.")
+        return
+    attempts = base.get_practice_attempts(row["draft_id"], user.id)
+    max_attempts = int(row["max_attempts"])
+    if max_attempts > 0 and attempts >= max_attempts:
+        await base.safe_reply(message, f"You have already used this practice exam {max_attempts} time(s).")
+        return
+    existing = base.get_active_session(user.id)
+    if existing:
+        with suppress(Exception):
+            base.DBH.execute("UPDATE sessions SET status='finished', active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (existing["id"],))
+    base.register_practice_attempt(row["draft_id"], user.id)
+    session_id = base.create_session_from_draft(row["draft_id"], user.id, user.id)
+    if not session_id:
+        await base.safe_reply(message, "Could not create the practice session.")
+        return
+    await base.safe_reply(
+        message,
+        f"<b>Practice Ready</b>\n<b>{base.html_escape(base.normalize_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>\n\nExam starting now...",
+        parse_mode=ParseMode.HTML,
+    )
+    base.DBH.execute("UPDATE sessions SET status='running' WHERE id=?", (session_id,))
+    await begin_or_advance_exam(context, session_id)
+
+
+base.start_practice_from_token = start_practice_from_token
+
+
 async def begin_or_advance_exam(context, session_id: str) -> None:
     session = base.get_session(session_id)
     if not session or session["status"] != "running":
