@@ -4779,8 +4779,9 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
             f"<div class='line'><b>Correct answer:</b> {base.html_escape(_latex_to_pretty_text(item['correct']))}</div>"
             + (f"<div class='line muted'><b>Explanation:</b> {exp_html}</div>" if exp_html else '') + "</div>"
         )
+    filtered_sections = [sec for sec in section_items if str(sec.get('title') or '').strip().lower() != 'general']
     section_cards = []
-    for sec in section_items:
+    for sec in filtered_sections:
         pct = 0 if not sec['total'] else round((sec['correct'] / sec['total']) * 100)
         section_cards.append(f"<div class='stat'><div class='label'>{base.html_escape(sec['title'])}</div><div class='value'>{sec['correct']}/{sec['total']}</div><div class='muted'>Wrong {sec['wrong']} • Skipped {sec['skipped']}</div><div class='bar'><span style='width:{pct}%'></span></div></div>")
     title = base.html_escape(base.normalize_visual_text(session['title']))
@@ -5429,8 +5430,12 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
                 exp_html = f"<div class='line muted'><b>Explanation:</b> {_html_from_display_text(exp)}</div>"
         else:
             exp_html = ''
+        section_label = str(item.get('section') or '').strip()
+        head_left = f"<b>{item['q_no']}</b>"
+        if section_label and section_label.lower() != 'general':
+            head_left += f" • {base.html_escape(section_label)}"
         review_cards.append(
-            f"<div class='review-card {status}'><div class='head'><div><b>Q{item['q_no']}</b> • {base.html_escape(item['section'])}</div><div>{base.html_escape(status.title())}</div></div>"
+            f"<div class='review-card {status}'><div class='head'><div>{head_left}</div><div>{base.html_escape(status.title())}</div></div>"
             f"{q_block}<div class='line'><b>Your answer:</b> {chosen_html}</div><div class='line'><b>Correct answer:</b> {correct_html}</div>{exp_html}</div>"
         )
     tpl = """<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>__TITLE__ — Result</title><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Bengali:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'><style>
