@@ -266,6 +266,32 @@ async def _send_creator_join_prompt(context, chat_id: int, channel: str) -> None
         )
 
 
+def get_default_explanation_text() -> str:
+    return get_setting("default_question_explanation", "").strip()
+
+
+def _resolved_explanation_text(raw: str) -> str:
+    value = _smart_clean_explanation_text(raw)
+    if value:
+        return value
+    return _smart_clean_explanation_text(get_default_explanation_text())
+
+
+def user_welcome_verify_keyboard() -> Optional[InlineKeyboardMarkup]:
+    rows: List[List[InlineKeyboardButton]] = []
+    saved_rows = get_welcome_buttons()
+    if saved_rows:
+        for row in saved_rows:
+            btns = [InlineKeyboardButton(text=b["text"], url=b["url"]) for b in row]
+            if btns:
+                rows.append(btns)
+    channel = get_required_channel()
+    if channel:
+        rows.append([InlineKeyboardButton("✅ Join Required Channel", url=f"https://t.me/{channel.lstrip('@')}")])
+        rows.append([InlineKeyboardButton("🔄 Verify & Continue", callback_data="panel:verify_join")])
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
 base.is_required_channel_member = _patched_is_required_channel_member
 base._creator_channel_check = _creator_channel_check
 base._send_creator_join_prompt = _send_creator_join_prompt
@@ -425,16 +451,12 @@ async def _patched_refresh_user_panel_by_id(context, user_id: int):
     else:
         text = (
             f"<b>{base.html_escape(brand)}</b>\n\n"
-            f"Welcome! You can join any live exam in a group where this bot is "
-            f"added, or open a practice link shared by an admin to take it right "
-            f"here in your inbox.\n\n"
+            f"You can join live exams in groups where this bot is added, or open a shared practice link here in your inbox.\n\n"
             f"<b>What you can do</b>\n"
-            f"• Take group exams — your score will appear on the leaderboard.\n"
-            f"• Open practice links — solve at your own pace and get a result PDF.\n"
-            f"• /pauseq, /resumeq, /skipq, /stoptqex — control your private practice.\n"
-            f"• /commands — see the full command list.\n\n"
-            f"<i>Want to create your own exams? Join the required channel first, "
-            f"then tap “Create your own exam”.</i>"
+            f"• Take live group exams and appear on the leaderboard.\n"
+            f"• Open practice links and get your result.\n"
+            f"• Use /pauseq, /resumeq, /skipq, /stoptqex during private practice.\n"
+            f"• Use /commands to see the commands available to you only."
         )
         rows = []
         try:
@@ -647,7 +669,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                 continue
             question_parts.append(line)
 
-        question = clean_forwarded_text(" ".join(question_parts))
+        question = _smart_clean_question_text("\n".join(question_parts))
         if correct_option is None and answer_ref is not None:
             correct_option = parse_answer_ref(answer_ref, options)
         if question and len(options) >= 2 and correct_option is not None:
@@ -656,7 +678,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                     "question": question,
                     "options": options,
                     "correct_option": int(correct_option),
-                    "explanation": clean_forwarded_text(" ".join(explanation_parts)),
+                    "explanation": _resolved_explanation_text("\n".join(explanation_parts)),
                 }
             )
 
@@ -897,6 +919,51 @@ def create_session_from_draft(draft_id: str, chat_id: int, actor_id: int) -> Opt
 
 
 base.create_session_from_draft = create_session_from_draft
+
+
+_previous_start_practice_from_token = getattr(base, "start_practice_from_token", None)
+
+
+async def start_practice_from_token(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    base.record_user(user)
+    base.mark_started(user)
+    row = base.get_practice_link_by_token(token)
+    if not row:
+        await base.safe_reply(message, "This practice link is invalid or disabled.")
+        return
+    q_count_row = base.DBH.fetchone("SELECT COUNT(*) AS c FROM draft_questions WHERE draft_id=?", (row["draft_id"],))
+    q_count = int(q_count_row["c"] if q_count_row else 0)
+    if q_count <= 0:
+        await base.safe_reply(message, "This practice exam does not have any questions yet.")
+        return
+    attempts = base.get_practice_attempts(row["draft_id"], user.id)
+    max_attempts = int(row["max_attempts"])
+    if max_attempts > 0 and attempts >= max_attempts:
+        await base.safe_reply(message, f"You have already used this practice exam {max_attempts} time(s).")
+        return
+    existing = base.get_active_session(user.id)
+    if existing:
+        with suppress(Exception):
+            base.DBH.execute("UPDATE sessions SET status='finished', active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (existing["id"],))
+    base.register_practice_attempt(row["draft_id"], user.id)
+    session_id = base.create_session_from_draft(row["draft_id"], user.id, user.id)
+    if not session_id:
+        await base.safe_reply(message, "Could not create the practice session.")
+        return
+    await base.safe_reply(
+        message,
+        f"<b>Practice Ready</b>\n<b>{base.html_escape(base.normalize_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>\n\nExam starting now...",
+        parse_mode=ParseMode.HTML,
+    )
+    base.DBH.execute("UPDATE sessions SET status='running' WHERE id=?", (session_id,))
+    await begin_or_advance_exam(context, session_id)
+
+
+base.start_practice_from_token = start_practice_from_token
 
 
 async def begin_or_advance_exam(context, session_id: str) -> None:
@@ -1469,6 +1536,46 @@ async def cmd_clearbuttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await message.reply_text("Welcome buttons removed.")
 
 
+async def cmd_setdefaultexplanation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can set the default explanation.")
+        return
+    raw = (message.text or "").split(None, 1)
+    body = raw[1].strip() if len(raw) > 1 else ""
+    if not body:
+        current = get_default_explanation_text() or "(not set)"
+        await message.reply_text(
+            "<b>Default Explanation</b>\n\n"
+            "Use this to auto-fill explanation text for questions that do not have one.\n\n"
+            "Example:\n"
+            "<code>/setdefaultexplanation ব্যাখ্যা পরে ক্লাসে আলোচনা করা হবে।</code>\n\n"
+            f"<b>Current:</b>\n<code>{base.html_escape(current)}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if len(body) > 500:
+        await message.reply_text("Default explanation is too long (max 500 chars).")
+        return
+    set_setting("default_question_explanation", body)
+    await message.reply_text("Default explanation saved.")
+
+
+async def cmd_cleardefaultexplanation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message:
+        return
+    if not base.is_owner(user.id):
+        await message.reply_text("Only the bot owner can clear the default explanation.")
+        return
+    set_setting("default_question_explanation", "")
+    await message.reply_text("Default explanation cleared.")
+
+
 async def send_welcome_if_configured(context, message, user) -> bool:
     """Send the configured welcome message + buttons. Returns True if sent."""
     template = get_welcome_text()
@@ -1476,16 +1583,41 @@ async def send_welcome_if_configured(context, message, user) -> bool:
         return False
     try:
         rendered = render_welcome(template, user)
-        await message.reply_text(
+        sent = await message.reply_text(
             rendered,
             parse_mode=ParseMode.HTML,
-            reply_markup=welcome_keyboard(),
+            reply_markup=user_welcome_verify_keyboard() or welcome_keyboard(),
             disable_web_page_preview=True,
         )
+        context.bot_data.setdefault("pending_welcome_message", {})[int(user.id)] = int(sent.message_id)
         return True
     except TelegramError as exc:
         base.logger.warning("welcome send failed: %s", exc)
         return False
+
+
+async def _delete_pending_welcome_message(context, user_id: int) -> None:
+    pending = context.bot_data.setdefault("pending_welcome_message", {})
+    mid = pending.pop(int(user_id), None)
+    if mid:
+        with suppress(Exception):
+            await base.safe_delete_message(context.bot, int(user_id), int(mid))
+
+
+async def _show_first_start_welcome(context, message, user) -> None:
+    template = get_welcome_text() or (
+        f"<b>Welcome, {{name}}!</b>\n\n"
+        f"You can join any live exam in a group where this bot is added, or open a practice link in your inbox.\n\n"
+        f"To create your own exam, join the required channel first, then tap verify."
+    )
+    rendered = render_welcome(template, user)
+    sent = await message.reply_text(
+        rendered,
+        parse_mode=ParseMode.HTML,
+        reply_markup=user_welcome_verify_keyboard(),
+        disable_web_page_preview=True,
+    )
+    context.bot_data.setdefault("pending_welcome_message", {})[int(user.id)] = int(sent.message_id)
 
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1647,6 +1779,8 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("welcome", cmd_welcome_preview), group=3)
     app.add_handler(CommandHandler("setbuttons", cmd_setbuttons), group=3)
     app.add_handler(CommandHandler("clearbuttons", cmd_clearbuttons), group=3)
+    app.add_handler(CommandHandler("setdefaultexplanation", cmd_setdefaultexplanation), group=3)
+    app.add_handler(CommandHandler("cleardefaultexplanation", cmd_cleardefaultexplanation), group=3)
     app.add_handler(CommandHandler("exporttheme", _cmd_export_theme), group=3)
     app.add_handler(CommandHandler("stats", cmd_stats), group=3)
     app.add_handler(CommandHandler("backupnow", cmd_backupnow), group=3)
@@ -1808,6 +1942,8 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
                 "• /clearwelcome — disable welcome",
                 "• /setbuttons — configure welcome inline buttons (one row per line, '|' separates buttons, 'Label - URL')",
                 "• /clearbuttons — remove welcome buttons",
+                "• /setdefaultexplanation TEXT — auto-fill explanation where a quiz has no explanation",
+                "• /cleardefaultexplanation — clear the auto explanation text",
                 "• /restart — restart the bot process",
             ])
     else:
@@ -2344,7 +2480,9 @@ def _smart_clean_option_text(raw: str) -> str:
 
 def _smart_clean_explanation_text(raw: str) -> str:
     value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
-    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip()
 
 
@@ -3746,7 +3884,8 @@ async def send_private_results(context, session_id: str) -> None:
         duration_seconds = int(rank_item.get('time_seconds') or 0)
         duration_label = base.fmt_elapsed(duration_seconds)
         lines = [f'<b>◉ {base.html_escape(session["title"])}</b>', '', f'Rank: <b>#{rank_item["rank"]}</b> / {total_users}', f'Score: <b>{rank_item["score"]}</b>', f'Negative / wrong: <b>{session["negative_mark"]}</b>', f'◆ Correct: <b>{correct}</b>', f'✕ Wrong: <b>{wrong}</b>', f'− Skipped: <b>{skipped}</b>', f'◉ Accuracy: <b>{accuracy:.2f}%</b>', f'▦ Percentage: <b>{percentage:.2f}%</b>', f'◉ Percentile: <b>{percentile:.2f}</b>', f'⏱ Time: <b>{duration_label}</b>', '']
-        if section_data and (len(section_data) > 1 or section_data[0]['title'] != 'General'):
+        section_data = [item for item in section_data if str(item.get('title') or '').strip().lower() != 'general']
+        if section_data:
             lines.append('<b>Section Analysis</b>')
             for item in section_data:
                 lines.append(f'• {base.html_escape(item["title"])} — ◆ {item["correct"]}  ✕ {item["wrong"]}  − {item["skipped"]}')
@@ -4685,8 +4824,9 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
             f"<div class='line'><b>Correct answer:</b> {base.html_escape(_latex_to_pretty_text(item['correct']))}</div>"
             + (f"<div class='line muted'><b>Explanation:</b> {exp_html}</div>" if exp_html else '') + "</div>"
         )
+    filtered_sections = [sec for sec in section_items if str(sec.get('title') or '').strip().lower() != 'general']
     section_cards = []
-    for sec in section_items:
+    for sec in filtered_sections:
         pct = 0 if not sec['total'] else round((sec['correct'] / sec['total']) * 100)
         section_cards.append(f"<div class='stat'><div class='label'>{base.html_escape(sec['title'])}</div><div class='value'>{sec['correct']}/{sec['total']}</div><div class='muted'>Wrong {sec['wrong']} • Skipped {sec['skipped']}</div><div class='bar'><span style='width:{pct}%'></span></div></div>")
     title = base.html_escape(base.normalize_visual_text(session['title']))
@@ -5149,7 +5289,7 @@ def _parse_numbered_question_format(text: str) -> List[Dict[str, Any]]:
                 'question': question,
                 'options': options,
                 'correct_option': int(correct_idx),
-                'explanation': _smart_clean_explanation_text(' '.join(explanation_parts)),
+                'explanation': _resolved_explanation_text('\n'.join(explanation_parts)),
             })
     return parsed
 
@@ -5172,7 +5312,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                 opts = [_smart_clean_option_text(str(x)) for x in opts if str(x).strip()]
                 ans = parse_answer_ref(str(item.get('answer') or item.get('correct') or ''), opts)
                 if q and len(opts) >= 2 and ans is not None:
-                    items.append({'question': q, 'options': opts, 'correct_option': ans, 'explanation': _smart_clean_explanation_text(str(item.get('explanation') or ''))})
+                    items.append({'question': q, 'options': opts, 'correct_option': ans, 'explanation': _resolved_explanation_text(str(item.get('explanation') or ''))})
             if items:
                 return items
     except Exception:
@@ -5190,7 +5330,7 @@ def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
         raise ValueError('Draft has no valid questions.')
     title_text = base.normalize_visual_text(str(draft['title'] or 'Exam'))
     title_html = base.html_escape(title_text)
-    sections = sorted({str(q['section']) for q in questions})
+    sections = sorted({str(q['section']) for q in questions if str(q['section']).strip() and str(q['section']).strip().lower() != 'general'})
     export_rows = []
     for q in questions:
         q_raw = str(q['question'] or '')
@@ -5234,19 +5374,19 @@ img{max-width:100%;display:block}.page{display:none;min-height:100vh}.page.activ
 <script>window.MathJax={tex:{inlineMath:[["\\(","\\)"],["$","$"]],displayMath:[["\\[","\\]"],["$$","$$"]]},svg:{fontCache:'global'}};</script>
 <script defer src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js'></script>
 </head><body data-theme='__DEFAULT_MODE__'>
-<div id='startPage' class='page active'><div class='hero shell'><div class='start-card card'><span class='brand-tag'>__BRAND__</span><div class='headline'>__TITLE__</div><div class='submeta muted'>Questions: __QCOUNT__ • Time / question: __QTIME__ sec • Negative: __NEG__</div><input id='studentName' class='input' type='text' placeholder='Enter your name'><div><div style='font-size:22px;font-weight:900;margin-bottom:10px'>Select sections</div><div id='sectionBox' class='chips'></div></div><div class='actions'><button id='startBtn' class='btn primary'>Start HTML Exam</button><button id='toggleThemeBtn' class='btn secondary'>Toggle Theme</button></div></div></div></div>
+    <div id='startPage' class='page active'><div class='hero shell'><div class='start-card card'><span class='brand-tag'>__BRAND__</span><div class='headline'>__TITLE__</div><div class='submeta muted'>Questions: __QCOUNT__ • Time / question: __QTIME__ sec • Negative: __NEG__</div><input id='studentName' class='input' type='text' placeholder='Enter your name'><div id='sectionsWrap'><div style='font-size:22px;font-weight:900;margin-bottom:10px'>Select sections</div><div id='sectionBox' class='chips'></div></div><div class='actions'><button id='startBtn' class='btn primary'>Start HTML Exam</button><button id='toggleThemeBtn' class='btn secondary'>Toggle Theme</button></div></div></div></div>
 <div id='examPage' class='page'><div class='topbar'><div class='inner'><div class='brand'><div class='brand-line'>__BRAND__</div><h1>__TITLE__</h1><div id='metaLine' class='meta'>Loading exam…</div></div><div class='timer'><div class='label'>Remaining</div><div id='timerValue' class='value'>00:00</div></div></div></div><div class='exam-wrap shell'><div id='questionList' class='exam-grid'></div></div><div class='float-actions'><button id='jumpBtn' class='fab'>Sections</button><button id='submitBtn' class='fab primary'>Submit</button></div><div id='drawerBackdrop' class='drawer-backdrop'></div><div id='drawer' class='drawer'><h3>Sections & Question List</h3><div id='sectionJump' class='chips' style='margin-bottom:16px'></div><div id='palette' class='palette'></div></div></div>
 <div id='resultPage' class='page'><div class='result-wrap shell'><div class='hero-result card'><div class='brand-line'>__BRAND__</div><div class='muted'>__TITLE__</div><div id='resultName' class='result-title'>Result</div><div id='resultScore' class='score-ring'>0.00</div><div class='muted'>Professional performance report</div><div id='summaryGrid' class='summary-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900;margin-bottom:12px'>Section Analysis</div><div id='sectionResultGrid' class='section-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900'>Answer Review</div><div class='tabs'><button class='tab active' data-filter='all'>All</button><button class='tab' data-filter='correct'>Correct</button><button class='tab' data-filter='wrong'>Wrong</button><button class='tab' data-filter='skipped'>Skipped</button></div><div id='reviewList' class='review-list'></div></div></div></div>
 <script>
-const QUESTIONS=__DATA__; const SECTIONS=__SECTIONS__; const NEGATIVE_MARK=__NEG_FLOAT__; const QUESTION_TIME=__QTIME__; let selectedSections=new Set(SECTIONS), active=[], answers={}, totalSeconds=0, leftSeconds=0, timer=null, currentQuestion=0;
+    const QUESTIONS=__DATA__; const SECTIONS=__SECTIONS__; const NEGATIVE_MARK=__NEG_FLOAT__; const QUESTION_TIME=__QTIME__; let selectedSections=new Set(SECTIONS), active=[], answers={}, totalSeconds=0, leftSeconds=0, timer=null, currentQuestion=0;
 const $=(id)=>document.getElementById(id); function fmt(sec){sec=Math.max(0,Math.floor(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');} function typesetMath(){if(window.MathJax&&window.MathJax.typesetPromise){window.MathJax.typesetPromise().catch(()=>{});}} function toggleTheme(){document.body.setAttribute('data-theme',document.body.getAttribute('data-theme')==='dark'?'light':'dark');}
 $('toggleThemeBtn').onclick=toggleTheme;
-function buildSectionSelectors(){const box=$('sectionBox'); box.innerHTML=''; SECTIONS.forEach(sec=>{const label=document.createElement('label'); label.className='chip'; label.innerHTML=`<input type='checkbox' checked> <span>${sec}</span>`; const input=label.querySelector('input'); input.onchange=()=>{ if(input.checked) selectedSections.add(sec); else selectedSections.delete(sec);}; box.appendChild(label);});}
+    function buildSectionSelectors(){const wrap=$('sectionsWrap'); const box=$('sectionBox'); box.innerHTML=''; if(!SECTIONS.length){wrap.style.display='none'; return;} wrap.style.display='block'; SECTIONS.forEach(sec=>{const label=document.createElement('label'); label.className='chip'; label.innerHTML=`<input type='checkbox' checked> <span>${sec}</span>`; const input=label.querySelector('input'); input.onchange=()=>{ if(input.checked) selectedSections.add(sec); else selectedSections.delete(sec);}; box.appendChild(label);});}
 function showPage(id){['startPage','examPage','resultPage'].forEach(x=>$(x).classList.remove('active')); $(id).classList.add('active');}
 function renderOption(option,idx){ return option.has_math ? `<div class='opt-body'><span class='opt-label'>${String.fromCharCode(65+idx)}.</span> <span class='math'>${option.raw}</span></div>` : `<div class='opt-body'><span class='opt-label'>${String.fromCharCode(65+idx)}.</span>${option.pretty}</div>`; }
 function renderQuestionBlock(q){ if(q.question_has_math){ if(q.question_image){ return `<div class='q-image'><img src='${q.question_image}' alt='Question ${q.q_no}'></div>`; } return `<div class='q-text math'>${q.question_raw}</div>`; } return `<div class='q-text ${q.question_pretty.length>170?'small':''}'>${q.question_pretty}</div>`; }
 function lockQuestion(idx,opt){ if(answers[idx]!==undefined) return; answers[idx]=opt; document.querySelectorAll(`.opt[data-idx="${idx}"]`).forEach(el=>{el.classList.add('locked'); const radio=el.querySelector('input'); if(radio) radio.disabled=true;}); const selected=document.querySelector(`.opt[data-idx="${idx}"][data-opt="${opt}"]`); if(selected) selected.classList.add('selected'); updatePalette(); currentQuestion=idx; const next=document.getElementById(`q-${idx+1}`); if(next){ setTimeout(()=>next.scrollIntoView({behavior:'smooth', block:'start'}),180); } }
-function renderExam(){ active=QUESTIONS.filter(q=>selectedSections.has(q.section)); if(!active.length) active=[...QUESTIONS]; answers={}; currentQuestion=0; totalSeconds=active.length*QUESTION_TIME; leftSeconds=totalSeconds; $('metaLine').textContent=`${active.length} questions • sections: ${[...new Set(active.map(q=>q.section))].join(', ')}`; const list=$('questionList'); list.innerHTML=''; active.forEach((q,idx)=>{ const card=document.createElement('div'); card.className='question-card card'; card.id=`q-${idx}`; const options=q.options.map((opt,i)=>`<label class='opt' data-idx='${idx}' data-opt='${i}'><input type='radio' name='q_${idx}'><div>${renderOption(opt,i)}</div></label>`).join(''); card.innerHTML=`<div class='q-top'><div><span class='q-index'>[${idx+1}/${active.length}]</span> <span class='q-section'>${q.section}</span></div></div>${renderQuestionBlock(q)}<div class='options'>${options}</div>`; list.appendChild(card); }); document.querySelectorAll('.opt').forEach(el=>{ el.addEventListener('click',()=>{ const idx=Number(el.dataset.idx),opt=Number(el.dataset.opt); lockQuestion(idx,opt); }); }); buildDrawer(); updatePalette(); typesetMath(); }
+    function renderExam(){ active=QUESTIONS.filter(q=>!SECTIONS.length || selectedSections.has(q.section)); if(!active.length) active=[...QUESTIONS]; answers={}; currentQuestion=0; totalSeconds=active.length*QUESTION_TIME; leftSeconds=totalSeconds; const visibleSections=[...new Set(active.map(q=>q.section).filter(Boolean).filter(sec=>String(sec).toLowerCase()!=='general'))]; $('metaLine').textContent=visibleSections.length?`${active.length} questions • sections: ${visibleSections.join(', ')}`:`${active.length} questions`; const list=$('questionList'); list.innerHTML=''; active.forEach((q,idx)=>{ const sectionBadge=(q.section && String(q.section).toLowerCase()!=='general')?` <span class='q-section'>${q.section}</span>`:''; const card=document.createElement('div'); card.className='question-card card'; card.id=`q-${idx}`; const options=q.options.map((opt,i)=>`<label class='opt' data-idx='${idx}' data-opt='${i}'><input type='radio' name='q_${idx}'><div>${renderOption(opt,i)}</div></label>`).join(''); card.innerHTML=`<div class='q-top'><div><span class='q-index'>[${idx+1}/${active.length}]</span>${sectionBadge}</div></div>${renderQuestionBlock(q)}<div class='options'>${options}</div>`; list.appendChild(card); }); document.querySelectorAll('.opt').forEach(el=>{ el.addEventListener('click',()=>{ const idx=Number(el.dataset.idx),opt=Number(el.dataset.opt); lockQuestion(idx,opt); }); }); buildDrawer(); updatePalette(); typesetMath(); }
 function buildDrawer(){ const jump=$('sectionJump'); jump.innerHTML=''; [...new Set(active.map(q=>q.section))].forEach(sec=>{ const btn=document.createElement('button'); btn.className='btn secondary'; btn.textContent=sec; btn.onclick=()=>{ const row=active.findIndex(x=>x.section===sec); if(row>=0){ currentQuestion=row; document.getElementById(`q-${row}`).scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); updatePalette(); } }; jump.appendChild(btn); }); const palette=$('palette'); palette.innerHTML=''; active.forEach((q,idx)=>{ const bubble=document.createElement('button'); bubble.className='bubble'; bubble.textContent=idx+1; bubble.onclick=()=>{ currentQuestion=idx; document.getElementById(`q-${idx}`).scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); updatePalette(); }; if(answers[idx]!==undefined) bubble.classList.add('answered'); if(idx===currentQuestion) bubble.classList.add('current'); palette.appendChild(bubble); }); }
 function updatePalette(){ buildDrawer(); } function openDrawer(){ $('drawerBackdrop').classList.add('show'); $('drawer').classList.add('show'); } function closeDrawer(){ $('drawerBackdrop').classList.remove('show'); $('drawer').classList.remove('show'); }
 $('jumpBtn').onclick=openDrawer; $('drawerBackdrop').onclick=closeDrawer; function startTimer(){ clearInterval(timer); $('timerValue').textContent=fmt(leftSeconds); timer=setInterval(()=>{ leftSeconds-=1; $('timerValue').textContent=fmt(leftSeconds); if(leftSeconds<=0){ clearInterval(timer); finishExam(); } },1000); }
@@ -5335,8 +5475,12 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
                 exp_html = f"<div class='line muted'><b>Explanation:</b> {_html_from_display_text(exp)}</div>"
         else:
             exp_html = ''
+        section_label = str(item.get('section') or '').strip()
+        head_left = f"<b>{item['q_no']}</b>"
+        if section_label and section_label.lower() != 'general':
+            head_left += f" • {base.html_escape(section_label)}"
         review_cards.append(
-            f"<div class='review-card {status}'><div class='head'><div><b>Q{item['q_no']}</b> • {base.html_escape(item['section'])}</div><div>{base.html_escape(status.title())}</div></div>"
+            f"<div class='review-card {status}'><div class='head'><div>{head_left}</div><div>{base.html_escape(status.title())}</div></div>"
             f"{q_block}<div class='line'><b>Your answer:</b> {chosen_html}</div><div class='line'><b>Correct answer:</b> {correct_html}</div>{exp_html}</div>"
         )
     tpl = """<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>__TITLE__ — Result</title><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Bengali:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'><style>
@@ -5514,6 +5658,17 @@ if _prev_callback_router_final is not None:
             q = getattr(update, "callback_query", None)
             user = getattr(update, "effective_user", None)
             data = (getattr(q, "data", "") or "") if q else ""
+            if data == "panel:verify_join" and user:
+                ok, _channel = await _creator_channel_check(context, user.id)
+                if ok:
+                    await _delete_pending_welcome_message(context, user.id)
+                    with suppress(Exception):
+                        await q.answer("Verified.")
+                    await _patched_refresh_user_panel_by_id(context, user.id)
+                else:
+                    with suppress(Exception):
+                        await q.answer("Please join the channel first.", show_alert=True)
+                return
             if data.startswith("panel:new") and user:
                 ok, channel = await _creator_channel_check(context, user.id)
                 if not ok:
@@ -5550,7 +5705,7 @@ except Exception:
 
 
 try:
-    _DARK_GREEN = "#15803d"
+    _DARK_GREEN = "#166534"
     _orig_render_scroll_exam_html = render_scroll_exam_html
 
     def render_scroll_exam_html(draft, owner_id):  # type: ignore[no-redef]
@@ -5568,6 +5723,9 @@ try:
             ".brand-line{font-weight:800;color:var(--accent);font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
             ".brand-line{font-weight:800;color:" + _DARK_GREEN + ";font-size:clamp(15px,2.4vw,18px);letter-spacing:.4px}",
         )
+        html_doc = html_doc.replace("background:var(--accent);color:#fff", "background:" + _DARK_GREEN + ";color:#fff")
+        html_doc = html_doc.replace("background:var(--accent);color:#08111d", "background:" + _DARK_GREEN + ";color:#fff")
+        html_doc = html_doc.replace("color:#c8f7bf", "color:" + _DARK_GREEN)
         return html_doc
 except Exception:
     pass
@@ -5625,41 +5783,17 @@ try:
             except Exception:
                 joined = True
 
-            if not joined or not already_started:
-                channel = base.CONFIG.required_channel
-                # Try the owner-configured welcome first.
-                sent_welcome = False
-                try:
-                    if get_welcome_text():
-                        sent_welcome = await send_welcome_if_configured(
-                            context, message, user
-                        )
-                except Exception:
-                    sent_welcome = False
-                if not joined:
-                    kb = InlineKeyboardMarkup([[InlineKeyboardButton(
-                        "✅ Join Required Channel",
-                        url=f"https://t.me/{channel.lstrip('@')}",
-                    )], [InlineKeyboardButton("🔄 I have joined — continue", callback_data="panel:home")]])
-                    intro = (
-                        f"<b>{base.html_escape(base.CONFIG.brand_name)}</b>\n\n"
-                        f"Welcome! You can take any exam this bot runs in a group, "
-                        f"or open a practice link shared with you — no setup needed.\n\n"
-                        f"<b>Want to create your own exams?</b>\n"
-                        f"Join our channel {base.html_escape(channel)} first, then tap "
-                        f"<i>“I have joined — continue”</i> to unlock exam creation."
-                    )
-                    with suppress(Exception):
-                        await context.bot.send_message(
-                            user.id, intro,
-                            parse_mode=base.ParseMode.HTML,
-                            reply_markup=kb,
-                            disable_web_page_preview=True,
-                        )
-                    return
-                # Joined but first-ever /start without a welcome configured —
-                # fall through to the regular user panel.
+            if not already_started:
+                await _delete_pending_welcome_message(context, user.id)
+                await _show_first_start_welcome(context, message, user)
+                return
 
+            if not joined:
+                await _delete_pending_welcome_message(context, user.id)
+                await _show_first_start_welcome(context, message, user)
+                return
+
+            await _delete_pending_welcome_message(context, user.id)
             await _patched_refresh_user_panel_by_id(context, user.id)
         except Exception:
             with suppress(Exception):
