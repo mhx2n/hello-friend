@@ -673,7 +673,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                 continue
             question_parts.append(line)
 
-        question = clean_forwarded_text(" ".join(question_parts))
+        question = _smart_clean_question_text("\n".join(question_parts))
         if correct_option is None and answer_ref is not None:
             correct_option = parse_answer_ref(answer_ref, options)
         if question and len(options) >= 2 and correct_option is not None:
@@ -682,7 +682,7 @@ def parse_marked_questions_from_text(text: str) -> List[Dict[str, Any]]:
                     "question": question,
                     "options": options,
                     "correct_option": int(correct_option),
-                    "explanation": clean_forwarded_text(" ".join(explanation_parts)),
+                    "explanation": _resolved_explanation_text("\n".join(explanation_parts)),
                 }
             )
 
