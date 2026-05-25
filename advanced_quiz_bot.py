@@ -1901,6 +1901,8 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
                 "• /clearwelcome — disable welcome",
                 "• /setbuttons — configure welcome inline buttons (one row per line, '|' separates buttons, 'Label - URL')",
                 "• /clearbuttons — remove welcome buttons",
+                "• /setdefaultexplanation TEXT — auto-fill explanation where a quiz has no explanation",
+                "• /cleardefaultexplanation — clear the auto explanation text",
                 "• /restart — restart the bot process",
             ])
     else:
