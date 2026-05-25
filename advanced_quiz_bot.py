@@ -3839,7 +3839,8 @@ async def send_private_results(context, session_id: str) -> None:
         duration_seconds = int(rank_item.get('time_seconds') or 0)
         duration_label = base.fmt_elapsed(duration_seconds)
         lines = [f'<b>◉ {base.html_escape(session["title"])}</b>', '', f'Rank: <b>#{rank_item["rank"]}</b> / {total_users}', f'Score: <b>{rank_item["score"]}</b>', f'Negative / wrong: <b>{session["negative_mark"]}</b>', f'◆ Correct: <b>{correct}</b>', f'✕ Wrong: <b>{wrong}</b>', f'− Skipped: <b>{skipped}</b>', f'◉ Accuracy: <b>{accuracy:.2f}%</b>', f'▦ Percentage: <b>{percentage:.2f}%</b>', f'◉ Percentile: <b>{percentile:.2f}</b>', f'⏱ Time: <b>{duration_label}</b>', '']
-        if section_data and (len(section_data) > 1 or section_data[0]['title'] != 'General'):
+        section_data = [item for item in section_data if str(item.get('title') or '').strip().lower() != 'general']
+        if section_data:
             lines.append('<b>Section Analysis</b>')
             for item in section_data:
                 lines.append(f'• {base.html_escape(item["title"])} — ◆ {item["correct"]}  ✕ {item["wrong"]}  − {item["skipped"]}')
