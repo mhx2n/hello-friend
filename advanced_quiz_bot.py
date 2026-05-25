@@ -2439,7 +2439,9 @@ def _smart_clean_option_text(raw: str) -> str:
 
 def _smart_clean_explanation_text(raw: str) -> str:
     value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
-    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip()
 
 
