@@ -8,6 +8,7 @@ import importlib.util
 import json
 import random
 import re
+import unicodedata
 import urllib.parse
 import sys
 from contextlib import closing, suppress
@@ -17,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputTextMessageContent, Poll, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import Application, ContextTypes, InlineQueryHandler
+from telegram.ext import Application, ApplicationHandlerStop, ContextTypes, InlineQueryHandler
 from telegram import InlineQueryResultArticle
 
 BASE_PATH = Path(__file__).resolve().with_name("bot_base.py")
@@ -49,6 +50,20 @@ COUNTER_RE = re.compile(r"^\s*[\[(]?\s*\d+\s*/\s*\d+\s*[\])]?\s*", re.I)
 URL_RE = re.compile(r"(?:https?://\S+|t\.me/\S+)", re.I)
 USERNAME_RE = re.compile(r"(?<!\w)@[A-Za-z0-9_]{3,}")
 QUIZBOT_TOKEN_RE = re.compile(r"(?:@quizbot\s+)?quiz\s*:\s*([A-Za-z0-9_-]{4,})", re.I)
+
+
+def _normalize_multiline_visual_text(text: Any) -> str:
+    """Normalize Telegram text without destroying intentional line breaks."""
+    value = unicodedata.normalize("NFKC", str(text or ""))
+    for ch in ["\u3164", "\u115F", "\u1160", "\u2800"]:
+        value = value.replace(ch, " ")
+    for ch in ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF", "\u00AD"]:
+        value = value.replace(ch, "")
+    value = value.replace("\t", " ").replace("\r", "")
+    value = re.sub(r"[ \f\v]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    return value.strip()
 
 
 def ensure_column(table: str, column: str, definition: str) -> None:
@@ -97,6 +112,13 @@ base.DBH.executescript(
         key   TEXT PRIMARY KEY,
         value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS user_quiz_filters (
+        user_id INTEGER NOT NULL,
+        phrase TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, phrase)
+    );
     """
 )
 
@@ -115,6 +137,25 @@ def set_setting(key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, str(value) if value is not None else ""),
     )
+
+
+def _clean_filter_phrase(raw: str) -> str:
+    return _normalize_multiline_visual_text(raw).replace("\n", " ").strip()[:80]
+
+
+def get_user_quiz_filters(user_id: int) -> List[str]:
+    rows = base.DBH.fetchall("SELECT phrase FROM user_quiz_filters WHERE user_id=? ORDER BY created_at ASC", (int(user_id),))
+    return [str(r["phrase"]) for r in rows if str(r["phrase"] or "").strip()]
+
+
+def apply_user_quiz_filters(user_id: Optional[int], text: str) -> str:
+    value = str(text or "")
+    if not user_id:
+        return value
+    for phrase in get_user_quiz_filters(int(user_id)):
+        if phrase:
+            value = re.sub(re.escape(phrase), "", value, flags=re.I)
+    return _normalize_multiline_visual_text(value)
 
 
 def get_brand_text(creator_id: Optional[int] = None) -> str:
@@ -451,12 +492,12 @@ async def _patched_refresh_user_panel_by_id(context, user_id: int):
     else:
         text = (
             f"<b>{base.html_escape(brand)}</b>\n\n"
-            f"You can join live exams in groups where this bot is added, or open a shared practice link here in your inbox.\n\n"
-            f"<b>What you can do</b>\n"
-            f"• Take live group exams and appear on the leaderboard.\n"
-            f"• Open practice links and get your result.\n"
-            f"• Use /pauseq, /resumeq, /skipq, /stoptqex during private practice.\n"
-            f"• Use /commands to see the commands available to you only."
+            f"<b>Your Access</b>\n"
+            f"• Join live group exams.\n"
+            f"• Open practice links in this inbox.\n"
+            f"• Create your own exam after channel verification.\n"
+            f"• Save quiz text filters with /filter.\n\n"
+            f"Use /commands for your available commands."
         )
         rows = []
         try:
@@ -871,6 +912,7 @@ def copy_draft(draft_id: str, owner_id: int) -> str:
 
 
 async def import_text_into_draft(message, context, draft_id: str, text: str, src: str = "text") -> None:
+    text = apply_user_quiz_filters(getattr(message.from_user, "id", None), text)
     parsed = parse_marked_questions_from_text(text)
     if not parsed:
         await base.safe_reply(
@@ -945,22 +987,36 @@ async def start_practice_from_token(update: Update, context: ContextTypes.DEFAUL
     if max_attempts > 0 and attempts >= max_attempts:
         await base.safe_reply(message, f"You have already used this practice exam {max_attempts} time(s).")
         return
-    existing = base.get_active_session(user.id)
-    if existing:
+    lock = base._operation_lock(context, f"practice:{user.id}") if hasattr(base, "_operation_lock") else None
+    if lock:
+        async with lock:
+            await _start_practice_locked(update, context, row, q_count)
+    else:
+        await _start_practice_locked(update, context, row, q_count)
+
+
+async def _start_practice_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, row: Any, q_count: int) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    active = base.get_active_session(user.id)
+    if active and str(active["draft_id"]) == str(row["draft_id"]) and int(active["started_at"] or 0) >= base.now_ts() - 8:
+        return
+    if active:
         with suppress(Exception):
-            base.DBH.execute("UPDATE sessions SET status='finished', active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (existing["id"],))
+            base.DBH.execute("UPDATE sessions SET status='stopped', ended_at=?, active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (base.now_ts(), active["id"]))
     base.register_practice_attempt(row["draft_id"], user.id)
     session_id = base.create_session_from_draft(row["draft_id"], user.id, user.id)
     if not session_id:
         await base.safe_reply(message, "Could not create the practice session.")
         return
-    await base.safe_reply(
+    sent = await base.safe_reply(
         message,
-        f"<b>Practice Ready</b>\n<b>{base.html_escape(base.normalize_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>\n\nExam starting now...",
+        f"<b>Practice Ready</b>\n<b>{base.html_escape(_normalize_multiline_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>",
         parse_mode=ParseMode.HTML,
     )
-    base.DBH.execute("UPDATE sessions SET status='running' WHERE id=?", (session_id,))
-    await begin_or_advance_exam(context, session_id)
+    await base.start_exam_countdown(context, session_id, existing_message_id=sent.message_id if sent else None)
 
 
 base.start_practice_from_token = start_practice_from_token
@@ -1797,6 +1853,7 @@ def everyone_private_commands() -> List[BotCommand]:
         BotCommand("start", "Activate bot / open practice links"),
         BotCommand("help", "Help and commands"),
         BotCommand("commands", "Command list"),
+        BotCommand("filter", "Remove saved words from future quizzes"),
         BotCommand("pauseq", "Pause your private practice"),
         BotCommand("resumeq", "Resume your private practice"),
         BotCommand("skipq", "Skip current private question"),
@@ -1886,6 +1943,8 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
             "<b>Everyone</b>",
             "• /start — activate the bot / open practice links / receive DM results",
             "• /start practice_TOKEN — open a generated practice exam",
+            "• /filter WORD — remove that word from future forwarded/sent quizzes",
+            "• /filters — show your saved quiz filters",
             "• /pauseq — pause your private practice after the current question",
             "• /resumeq — resume a paused private practice",
             "• /skipq — skip the current private question",
@@ -2131,6 +2190,25 @@ async def handle_text(update: Update, context) -> None:
                 return
             stop_clone_session(user.id)
             await base.send_draft_card(context, user.id, user.id, clone["draft_id"], header="◆ Clone session finished.")
+            return
+
+        if cmd in {"filter", "filters"}:
+            phrase = _clean_filter_phrase(args)
+            if cmd == "filters" or not phrase:
+                current = get_user_quiz_filters(user.id)
+                text = "<b>Quiz Filters</b>\n\n" + ("\n".join(f"• <code>{base.html_escape(x)}</code>" for x in current) if current else "No saved filters.")
+                text += "\n\nUse: <code>/filter WORD</code>\nClear all: <code>/filter clear</code>"
+                await base.safe_reply(message, text, parse_mode=ParseMode.HTML)
+                return
+            if phrase.casefold() in {"clear", "off", "none"}:
+                base.DBH.execute("DELETE FROM user_quiz_filters WHERE user_id=?", (user.id,))
+                await base.safe_reply(message, "✅ All quiz filters cleared.")
+                return
+            base.DBH.execute(
+                "INSERT OR REPLACE INTO user_quiz_filters(user_id, phrase, created_at) VALUES(?,?,?)",
+                (user.id, phrase, base.now_ts()),
+            )
+            await base.safe_reply(message, f"✅ Saved filter: <code>{base.html_escape(phrase)}</code>", parse_mode=ParseMode.HTML)
             return
 
         if cmd == "draftinfo":
@@ -2437,7 +2515,7 @@ _ADV_EDIT_STATES = {
 
 
 def _smart_clean_question_text(raw: str) -> str:
-    original = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    original = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not original:
         return ""
     value = original
@@ -2465,7 +2543,7 @@ def _smart_clean_question_text(raw: str) -> str:
 
 
 def _smart_clean_option_text(raw: str) -> str:
-    value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    value = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not value:
         return ""
     for mark in CHECKMARKS:
@@ -2479,7 +2557,7 @@ def _smart_clean_option_text(raw: str) -> str:
 
 
 def _smart_clean_explanation_text(raw: str) -> str:
-    value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    value = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     value = re.sub(r"[ \t]+", " ", value)
     value = re.sub(r" *\n *", "\n", value)
     value = re.sub(r"\n{3,}", "\n\n", value)
@@ -3287,10 +3365,10 @@ async def handle_poll_import(update: Update, context) -> None:
         if draft_id and message.poll.type == Poll.QUIZ and message.poll.correct_option_id is not None:
             ok, q_no = dedup_add_question_to_draft(
                 draft_id,
-                message.poll.question,
-                [opt.text for opt in message.poll.options],
+                apply_user_quiz_filters(user.id, message.poll.question),
+                [apply_user_quiz_filters(user.id, opt.text) for opt in message.poll.options],
                 int(message.poll.correct_option_id),
-                message.poll.explanation or '',
+                apply_user_quiz_filters(user.id, message.poll.explanation or ''),
                 'quizbot_clone' if clone else 'forwarded_quiz',
             )
             sanitize_existing_draft_questions(draft_id)
@@ -4183,6 +4261,10 @@ def _latex_to_pretty_text(raw: str) -> str:
     return base.normalize_visual_text(text).strip()
 
 
+def _latex_to_poll_text(raw: str) -> str:
+    return "\n".join(_latex_to_pretty_text(line) for line in str(raw or "").replace("\r", "").split("\n")).strip()
+
+
 def _html_from_display_text(raw: str) -> str:
     return base.html_escape(_latex_to_pretty_text(raw)).replace('\n', '<br>')
 
@@ -4961,10 +5043,10 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
     prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
     question_prefix = _build_question_prefix(next_index, total)
-    poll_question = (question_prefix + _latex_to_pretty_text(q_text)).strip() or f'Question {next_index}'
+    poll_question = (question_prefix + _latex_to_poll_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
-        poll_question = question_prefix + _latex_to_pretty_text(q_text)[: allowed_q - 1].rstrip() + '…'
+        poll_question = question_prefix + _latex_to_poll_text(q_text)[: allowed_q - 1].rstrip() + '…'
     explanation_text = _latex_to_pretty_text(_smart_clean_explanation_text(str(q['explanation'] or f'Question {next_index} of {total}')))
     if len(explanation_text) > 200:
         explanation_text = explanation_text[:199] + '…'
@@ -5377,22 +5459,22 @@ img{max-width:100%;display:block}.page{display:none;min-height:100vh}.page.activ
     <div id='startPage' class='page active'><div class='hero shell'><div class='start-card card'><span class='brand-tag'>__BRAND__</span><div class='headline'>__TITLE__</div><div class='submeta muted'>Questions: __QCOUNT__ • Time / question: __QTIME__ sec • Negative: __NEG__</div><input id='studentName' class='input' type='text' placeholder='Enter your name'><div id='sectionsWrap'><div style='font-size:22px;font-weight:900;margin-bottom:10px'>Select sections</div><div id='sectionBox' class='chips'></div></div><div class='actions'><button id='startBtn' class='btn primary'>Start HTML Exam</button><button id='toggleThemeBtn' class='btn secondary'>Toggle Theme</button></div></div></div></div>
 <div id='examPage' class='page'><div class='topbar'><div class='inner'><div class='brand'><div class='brand-line'>__BRAND__</div><h1>__TITLE__</h1><div id='metaLine' class='meta'>Loading exam…</div></div><div class='timer'><div class='label'>Remaining</div><div id='timerValue' class='value'>00:00</div></div></div></div><div class='exam-wrap shell'><div id='questionList' class='exam-grid'></div></div><div class='float-actions'><button id='jumpBtn' class='fab'>Sections</button><button id='submitBtn' class='fab primary'>Submit</button></div><div id='drawerBackdrop' class='drawer-backdrop'></div><div id='drawer' class='drawer'><h3>Sections & Question List</h3><div id='sectionJump' class='chips' style='margin-bottom:16px'></div><div id='palette' class='palette'></div></div></div>
 <div id='resultPage' class='page'><div class='result-wrap shell'><div class='hero-result card'><div class='brand-line'>__BRAND__</div><div class='muted'>__TITLE__</div><div id='resultName' class='result-title'>Result</div><div id='resultScore' class='score-ring'>0.00</div><div class='muted'>Professional performance report</div><div id='summaryGrid' class='summary-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900;margin-bottom:12px'>Section Analysis</div><div id='sectionResultGrid' class='section-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900'>Answer Review</div><div class='tabs'><button class='tab active' data-filter='all'>All</button><button class='tab' data-filter='correct'>Correct</button><button class='tab' data-filter='wrong'>Wrong</button><button class='tab' data-filter='skipped'>Skipped</button></div><div id='reviewList' class='review-list'></div></div></div></div>
-<script>
-    const QUESTIONS=__DATA__; const SECTIONS=__SECTIONS__; const NEGATIVE_MARK=__NEG_FLOAT__; const QUESTION_TIME=__QTIME__; let selectedSections=new Set(SECTIONS), active=[], answers={}, totalSeconds=0, leftSeconds=0, timer=null, currentQuestion=0;
+    <script>
+    const QUESTIONS=__DATA__; const SECTIONS=__SECTIONS__; const NEGATIVE_MARK=__NEG_FLOAT__; const QUESTION_TIME=__QTIME__; let selectedSections=new Set(SECTIONS), active=[], answers={}, totalSeconds=0, leftSeconds=0, timer=null, currentQuestion=0, submitted=false;
 const $=(id)=>document.getElementById(id); function fmt(sec){sec=Math.max(0,Math.floor(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');} function typesetMath(){if(window.MathJax&&window.MathJax.typesetPromise){window.MathJax.typesetPromise().catch(()=>{});}} function toggleTheme(){document.body.setAttribute('data-theme',document.body.getAttribute('data-theme')==='dark'?'light':'dark');}
 $('toggleThemeBtn').onclick=toggleTheme;
     function buildSectionSelectors(){const wrap=$('sectionsWrap'); const box=$('sectionBox'); box.innerHTML=''; if(!SECTIONS.length){wrap.style.display='none'; return;} wrap.style.display='block'; SECTIONS.forEach(sec=>{const label=document.createElement('label'); label.className='chip'; label.innerHTML=`<input type='checkbox' checked> <span>${sec}</span>`; const input=label.querySelector('input'); input.onchange=()=>{ if(input.checked) selectedSections.add(sec); else selectedSections.delete(sec);}; box.appendChild(label);});}
 function showPage(id){['startPage','examPage','resultPage'].forEach(x=>$(x).classList.remove('active')); $(id).classList.add('active');}
 function renderOption(option,idx){ return option.has_math ? `<div class='opt-body'><span class='opt-label'>${String.fromCharCode(65+idx)}.</span> <span class='math'>${option.raw}</span></div>` : `<div class='opt-body'><span class='opt-label'>${String.fromCharCode(65+idx)}.</span>${option.pretty}</div>`; }
 function renderQuestionBlock(q){ if(q.question_has_math){ if(q.question_image){ return `<div class='q-image'><img src='${q.question_image}' alt='Question ${q.q_no}'></div>`; } return `<div class='q-text math'>${q.question_raw}</div>`; } return `<div class='q-text ${q.question_pretty.length>170?'small':''}'>${q.question_pretty}</div>`; }
-function lockQuestion(idx,opt){ if(answers[idx]!==undefined) return; answers[idx]=opt; document.querySelectorAll(`.opt[data-idx="${idx}"]`).forEach(el=>{el.classList.add('locked'); const radio=el.querySelector('input'); if(radio) radio.disabled=true;}); const selected=document.querySelector(`.opt[data-idx="${idx}"][data-opt="${opt}"]`); if(selected) selected.classList.add('selected'); updatePalette(); currentQuestion=idx; const next=document.getElementById(`q-${idx+1}`); if(next){ setTimeout(()=>next.scrollIntoView({behavior:'smooth', block:'start'}),180); } }
-    function renderExam(){ active=QUESTIONS.filter(q=>!SECTIONS.length || selectedSections.has(q.section)); if(!active.length) active=[...QUESTIONS]; answers={}; currentQuestion=0; totalSeconds=active.length*QUESTION_TIME; leftSeconds=totalSeconds; const visibleSections=[...new Set(active.map(q=>q.section).filter(Boolean).filter(sec=>String(sec).toLowerCase()!=='general'))]; $('metaLine').textContent=visibleSections.length?`${active.length} questions • sections: ${visibleSections.join(', ')}`:`${active.length} questions`; const list=$('questionList'); list.innerHTML=''; active.forEach((q,idx)=>{ const sectionBadge=(q.section && String(q.section).toLowerCase()!=='general')?` <span class='q-section'>${q.section}</span>`:''; const card=document.createElement('div'); card.className='question-card card'; card.id=`q-${idx}`; const options=q.options.map((opt,i)=>`<label class='opt' data-idx='${idx}' data-opt='${i}'><input type='radio' name='q_${idx}'><div>${renderOption(opt,i)}</div></label>`).join(''); card.innerHTML=`<div class='q-top'><div><span class='q-index'>[${idx+1}/${active.length}]</span>${sectionBadge}</div></div>${renderQuestionBlock(q)}<div class='options'>${options}</div>`; list.appendChild(card); }); document.querySelectorAll('.opt').forEach(el=>{ el.addEventListener('click',()=>{ const idx=Number(el.dataset.idx),opt=Number(el.dataset.opt); lockQuestion(idx,opt); }); }); buildDrawer(); updatePalette(); typesetMath(); }
+function lockQuestion(idx,opt){ if(answers[idx]!==undefined||submitted) return; answers[idx]=opt; document.querySelectorAll(`.opt[data-idx="${idx}"]`).forEach(el=>{el.classList.add('locked'); const radio=el.querySelector('input'); if(radio) radio.disabled=true;}); const selected=document.querySelector(`.opt[data-idx="${idx}"][data-opt="${opt}"]`); if(selected) selected.classList.add('selected'); updatePalette(); if(Object.keys(answers).length>=active.length){ setTimeout(finishExam,260); return; } currentQuestion=idx; const next=document.getElementById(`q-${idx+1}`); if(next){ setTimeout(()=>next.scrollIntoView({behavior:'smooth', block:'start'}),180); } }
+    function renderExam(){ active=QUESTIONS.filter(q=>!SECTIONS.length || selectedSections.has(q.section)); if(!active.length) active=[...QUESTIONS]; answers={}; submitted=false; currentQuestion=0; totalSeconds=active.length*QUESTION_TIME; leftSeconds=totalSeconds; const visibleSections=[...new Set(active.map(q=>q.section).filter(Boolean).filter(sec=>String(sec).toLowerCase()!=='general'))]; $('metaLine').textContent=visibleSections.length?`${active.length} questions • sections: ${visibleSections.join(', ')}`:`${active.length} questions`; const list=$('questionList'); list.innerHTML=''; active.forEach((q,idx)=>{ const sectionBadge=(q.section && String(q.section).toLowerCase()!=='general')?` <span class='q-section'>${q.section}</span>`:''; const card=document.createElement('div'); card.className='question-card card'; card.id=`q-${idx}`; const options=q.options.map((opt,i)=>`<label class='opt' data-idx='${idx}' data-opt='${i}'><input type='radio' name='q_${idx}'><div>${renderOption(opt,i)}</div></label>`).join(''); card.innerHTML=`<div class='q-top'><div><span class='q-index'>[${idx+1}/${active.length}]</span>${sectionBadge}</div></div>${renderQuestionBlock(q)}<div class='options'>${options}</div>`; list.appendChild(card); }); document.querySelectorAll('.opt').forEach(el=>{ el.addEventListener('click',()=>{ const idx=Number(el.dataset.idx),opt=Number(el.dataset.opt); lockQuestion(idx,opt); }); }); buildDrawer(); updatePalette(); typesetMath(); }
 function buildDrawer(){ const jump=$('sectionJump'); jump.innerHTML=''; [...new Set(active.map(q=>q.section))].forEach(sec=>{ const btn=document.createElement('button'); btn.className='btn secondary'; btn.textContent=sec; btn.onclick=()=>{ const row=active.findIndex(x=>x.section===sec); if(row>=0){ currentQuestion=row; document.getElementById(`q-${row}`).scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); updatePalette(); } }; jump.appendChild(btn); }); const palette=$('palette'); palette.innerHTML=''; active.forEach((q,idx)=>{ const bubble=document.createElement('button'); bubble.className='bubble'; bubble.textContent=idx+1; bubble.onclick=()=>{ currentQuestion=idx; document.getElementById(`q-${idx}`).scrollIntoView({behavior:'smooth', block:'start'}); closeDrawer(); updatePalette(); }; if(answers[idx]!==undefined) bubble.classList.add('answered'); if(idx===currentQuestion) bubble.classList.add('current'); palette.appendChild(bubble); }); }
 function updatePalette(){ buildDrawer(); } function openDrawer(){ $('drawerBackdrop').classList.add('show'); $('drawer').classList.add('show'); } function closeDrawer(){ $('drawerBackdrop').classList.remove('show'); $('drawer').classList.remove('show'); }
 $('jumpBtn').onclick=openDrawer; $('drawerBackdrop').onclick=closeDrawer; function startTimer(){ clearInterval(timer); $('timerValue').textContent=fmt(leftSeconds); timer=setInterval(()=>{ leftSeconds-=1; $('timerValue').textContent=fmt(leftSeconds); if(leftSeconds<=0){ clearInterval(timer); finishExam(); } },1000); }
 function buildSummaryCards(summary){ $('summaryGrid').innerHTML=summary.map(item=>`<div class='stat'><div class='label'>${item.label}</div><div class='value'>${item.value}</div></div>`).join(''); }
 function reviewBlock(item){ const qBlock=item.question_has_math?(item.question_image?`<div class='q-image' style='margin-bottom:10px'><img src='${item.question_image}' alt='Question'></div>`:`<div class='review-q math'>${item.question_raw}</div>`):`<div class='review-q'>${item.question_pretty}</div>`; const ansRaw=item.answer_has_math?`<span class='math'>${item.answer_raw}</span>`:item.answer_pretty; const corRaw=item.correct_has_math?`<span class='math'>${item.correct_raw}</span>`:item.correct_pretty; const exp=item.explanation_raw?(item.explanation_has_math?`<div class='answer-line muted'><b>Explanation:</b> <span class='math'>${item.explanation_raw}</span></div>`:`<div class='answer-line muted'><b>Explanation:</b> ${item.explanation_pretty}</div>`):''; return `<div class='review-card ${item.status}' data-status='${item.status}'><div class='review-head'><div><b>Q${item.q_no}</b> • ${item.section}</div><div class='muted'>${item.status.toUpperCase()}</div></div>${qBlock}<div class='answer-line'><b>Your answer:</b> ${ansRaw}</div><div class='answer-line'><b>Correct answer:</b> ${corRaw}</div>${exp}</div>`; }
-function finishExam(){ clearInterval(timer); let correct=0,wrong=0,skipped=0; active.forEach((q,idx)=>{ if(answers[idx]===undefined) skipped++; else if(Number(answers[idx])===Number(q.correct)) correct++; else wrong++; }); let score=Math.round(((correct*1)-(wrong*NEGATIVE_MARK))*100)/100; if(Object.is(score,-0)) score=0; const attempted=Math.max(1,correct+wrong); const accuracy=((correct/attempted)*100).toFixed(2)+'%'; const percentage=((correct/Math.max(1,active.length))*100).toFixed(2)+'%'; const usedSeconds=totalSeconds-leftSeconds; $('resultName').textContent=`${$('studentName').value.trim()||'Student'} — __TITLE_TEXT__`; $('resultScore').textContent=score.toFixed(2); buildSummaryCards([{label:'Correct',value:correct},{label:'Wrong',value:wrong},{label:'Skipped',value:skipped},{label:'Negative / wrong',value:NEGATIVE_MARK.toFixed(2)},{label:'Accuracy',value:accuracy},{label:'Percentage',value:percentage},{label:'Time used',value:fmt(usedSeconds)},{label:'Questions',value:active.length}]); const sectionMap={}; active.forEach((q,idx)=>{ if(!sectionMap[q.section]) sectionMap[q.section]={total:0,correct:0,wrong:0,skipped:0}; sectionMap[q.section].total+=1; if(answers[idx]===undefined) sectionMap[q.section].skipped+=1; else if(Number(answers[idx])===Number(q.correct)) sectionMap[q.section].correct+=1; else sectionMap[q.section].wrong+=1; }); $('sectionResultGrid').innerHTML=Object.entries(sectionMap).map(([name,item])=>{ const pct=item.total?Math.round((item.correct/item.total)*100):0; return `<div class='stat'><div class='label'>${name}</div><div class='value'>${item.correct}/${item.total}</div><div class='muted'>Wrong ${item.wrong} • Skipped ${item.skipped}</div><div class='bar'><span style='width:${pct}%'></span></div></div>`; }).join(''); const review=active.map((q,idx)=>{ const ans=answers[idx]; const status=ans===undefined?'skipped':(Number(ans)===Number(q.correct)?'correct':'wrong'); const chosen=ans===undefined?{raw:'Skipped',pretty:'Skipped',has_math:false}:q.options[ans]; const correctOpt=q.options[q.correct]; return {q_no:idx+1, section:q.section, status, question_raw:q.question_raw, question_pretty:q.question_pretty, question_has_math:q.question_has_math, question_image:q.question_image, answer_raw:chosen.raw, answer_pretty:chosen.pretty, answer_has_math:!!chosen.has_math, correct_raw:correctOpt.raw, correct_pretty:correctOpt.pretty, correct_has_math:!!correctOpt.has_math, explanation_raw:q.explanation_raw, explanation_pretty:q.explanation_pretty, explanation_has_math:q.explanation_has_math}; }).map(reviewBlock).join(''); $('reviewList').innerHTML=review; showPage('resultPage'); window.scrollTo({top:0,behavior:'smooth'}); typesetMath(); }
+function finishExam(){ if(submitted) return; submitted=true; clearInterval(timer); let correct=0,wrong=0,skipped=0; active.forEach((q,idx)=>{ if(answers[idx]===undefined) skipped++; else if(Number(answers[idx])===Number(q.correct)) correct++; else wrong++; }); let score=Math.round(((correct*1)-(wrong*NEGATIVE_MARK))*100)/100; if(Object.is(score,-0)) score=0; const attempted=Math.max(1,correct+wrong); const accuracy=((correct/attempted)*100).toFixed(2)+'%'; const percentage=((correct/Math.max(1,active.length))*100).toFixed(2)+'%'; const usedSeconds=totalSeconds-leftSeconds; $('resultName').textContent=`${$('studentName').value.trim()||'Student'} — __TITLE_TEXT__`; $('resultScore').textContent=score.toFixed(2); buildSummaryCards([{label:'Correct',value:correct},{label:'Wrong',value:wrong},{label:'Skipped',value:skipped},{label:'Negative / wrong',value:NEGATIVE_MARK.toFixed(2)},{label:'Accuracy',value:accuracy},{label:'Percentage',value:percentage},{label:'Time used',value:fmt(usedSeconds)},{label:'Questions',value:active.length}]); const sectionMap={}; active.forEach((q,idx)=>{ if(!sectionMap[q.section]) sectionMap[q.section]={total:0,correct:0,wrong:0,skipped:0}; sectionMap[q.section].total+=1; if(answers[idx]===undefined) sectionMap[q.section].skipped+=1; else if(Number(answers[idx])===Number(q.correct)) sectionMap[q.section].correct+=1; else sectionMap[q.section].wrong+=1; }); $('sectionResultGrid').innerHTML=Object.entries(sectionMap).map(([name,item])=>{ const pct=item.total?Math.round((item.correct/item.total)*100):0; return `<div class='stat'><div class='label'>${name}</div><div class='value'>${item.correct}/${item.total}</div><div class='muted'>Wrong ${item.wrong} • Skipped ${item.skipped}</div><div class='bar'><span style='width:${pct}%'></span></div></div>`; }).join(''); const review=active.map((q,idx)=>{ const ans=answers[idx]; const status=ans===undefined?'skipped':(Number(ans)===Number(q.correct)?'correct':'wrong'); const chosen=ans===undefined?{raw:'Skipped',pretty:'Skipped',has_math:false}:q.options[ans]; const correctOpt=q.options[q.correct]; return {q_no:idx+1, section:q.section, status, question_raw:q.question_raw, question_pretty:q.question_pretty, question_has_math:q.question_has_math, question_image:q.question_image, answer_raw:chosen.raw, answer_pretty:chosen.pretty, answer_has_math:!!chosen.has_math, correct_raw:correctOpt.raw, correct_pretty:correctOpt.pretty, correct_has_math:!!correctOpt.has_math, explanation_raw:q.explanation_raw, explanation_pretty:q.explanation_pretty, explanation_has_math:q.explanation_has_math}; }).map(reviewBlock).join(''); $('reviewList').innerHTML=review; showPage('resultPage'); window.scrollTo({top:0,behavior:'smooth'}); typesetMath(); }
 function applyFilter(mode){ document.querySelectorAll('.tab').forEach(btn=>btn.classList.toggle('active', btn.dataset.filter===mode)); document.querySelectorAll('.review-card').forEach(card=>{ card.style.display=(mode==='all'||card.dataset.status===mode)?'':'none'; }); }
 document.querySelectorAll('.tab').forEach(btn=>btn.onclick=()=>applyFilter(btn.dataset.filter)); $('startBtn').onclick=()=>{ renderExam(); showPage('examPage'); window.scrollTo({top:0,behavior:'smooth'}); startTimer(); }; $('submitBtn').onclick=finishExam; document.addEventListener('scroll',()=>{ if(!$('examPage').classList.contains('active')) return; const cards=[...document.querySelectorAll('.question-card')]; let activeIdx=0; for(const [idx,card] of cards.entries()){ const rect=card.getBoundingClientRect(); if(rect.top<=120) activeIdx=idx; } currentQuestion=activeIdx; updatePalette(); },{passive:true}); buildSectionSelectors(); typesetMath();
 </script></body></html>"""
