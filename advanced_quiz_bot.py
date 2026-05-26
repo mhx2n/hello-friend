@@ -158,6 +158,19 @@ def apply_user_quiz_filters(user_id: Optional[int], text: str) -> str:
     return _normalize_multiline_visual_text(value)
 
 
+QUESTION_BRAND_PREFIX = "[TQX]"
+
+
+def _strip_question_brand_prefix(text: str) -> str:
+    value = _normalize_multiline_visual_text(text)
+    return re.sub(r"^\s*\[\s*TQX\s*\]\s*", "", value, flags=re.I).strip()
+
+
+def _ensure_question_brand_prefix(text: str) -> str:
+    value = _strip_question_brand_prefix(text)
+    return f"{QUESTION_BRAND_PREFIX} {value}".strip() if value else ""
+
+
 def get_brand_text(creator_id: Optional[int] = None) -> str:
     """Owner-only branding shown at the top of every quiz poll.
 
