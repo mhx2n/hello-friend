@@ -5923,7 +5923,7 @@ try:
             # Privileged users always go straight to the admin panel.
             if _is_privileged(user.id):
                 await _patched_refresh_user_panel_by_id(context, user.id)
-                return
+                raise ApplicationHandlerStop
 
             # For regular users: on first /start (or while not yet a member
             # of the required channel) show the owner-configured welcome +
@@ -5937,16 +5937,18 @@ try:
             if not already_started:
                 await _delete_pending_welcome_message(context, user.id)
                 await _show_first_start_welcome(context, message, user)
-                return
+                raise ApplicationHandlerStop
 
             if not joined:
                 await _delete_pending_welcome_message(context, user.id)
                 await _show_first_start_welcome(context, message, user)
-                return
+                raise ApplicationHandlerStop
 
             await _delete_pending_welcome_message(context, user.id)
             await _patched_refresh_user_panel_by_id(context, user.id)
             raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5968,6 +5970,8 @@ try:
             text = build_commands_text(chat.type, is_admin_u, is_owner_u)
             await base.safe_reply(message, text)
             raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5984,6 +5988,8 @@ try:
                 pass
             await _patched_refresh_user_panel_by_id(context, user.id)
             raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             pass
 
