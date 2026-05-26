@@ -5450,7 +5450,9 @@ def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     tpl = """<!DOCTYPE html>
 <html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'><title>__TITLE__</title>
 <style>
-:root{--accent:__ACCENT__;--accent-soft:__ACCENT_SOFT__;--danger:__DANGER__;--success:__SUCCESS__;--warning:__WARNING__;--radius:22px;--shadow:0 14px 38px rgba(15,23,42,.10)}
+:root{--accent:__ACCENT__;--accent-soft:__ACCENT_SOFT__;--danger:__DANGER__;--success:__SUCCESS__;--warning:__WARNING__;--radius:22px;--shadow:0 14px 38px rgba(15,23,42,.10);--page-bg:#05070b;--text:#f7fafc}
+html[data-theme='light'],body[data-theme='light']{--page-bg:#f1f5fb}
+html[data-theme='dark'],body[data-theme='dark']{--page-bg:#05070b}
 *{box-sizing:border-box}html,body{background:var(--page-bg);overscroll-behavior:none;-webkit-overflow-scrolling:touch}html{scroll-behavior:smooth;min-height:100%}body{margin:0;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial,'Noto Sans Bengali',sans-serif;color:var(--text);transition:.2s;background-attachment:fixed;min-height:100vh}
 body[data-theme='light']{--page-bg:linear-gradient(180deg,#f8fbff,#eff4fb 55%,#f7fafc) fixed;--text:#0f172a;--muted:#5b6778;--surface:#ffffff;--surface-2:#f8fafc;--border:#dbe4f0;--glass:rgba(255,255,255,.84);--chip:rgba(37,99,235,.08)}
 body[data-theme='dark']{--page-bg:radial-gradient(circle at top,#10213c 0,#05070b 52%,#020407 100%) fixed;--text:#f7fafc;--muted:#94a3b8;--surface:#0a1323;--surface-2:#0e1a2f;--border:rgba(148,163,184,.18);--glass:rgba(5,7,11,.9);--chip:rgba(148,163,184,.12)}
