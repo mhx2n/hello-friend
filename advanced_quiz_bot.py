@@ -5043,10 +5043,10 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
     prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
     question_prefix = _build_question_prefix(next_index, total)
-    poll_question = (question_prefix + _latex_to_pretty_text(q_text)).strip() or f'Question {next_index}'
+    poll_question = (question_prefix + _latex_to_poll_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
-        poll_question = question_prefix + _latex_to_pretty_text(q_text)[: allowed_q - 1].rstrip() + '…'
+        poll_question = question_prefix + _latex_to_poll_text(q_text)[: allowed_q - 1].rstrip() + '…'
     explanation_text = _latex_to_pretty_text(_smart_clean_explanation_text(str(q['explanation'] or f'Question {next_index} of {total}')))
     if len(explanation_text) > 200:
         explanation_text = explanation_text[:199] + '…'
