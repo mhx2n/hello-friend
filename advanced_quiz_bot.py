@@ -5126,6 +5126,14 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
+    try:
+        _creator_for_gate = int(session['created_by'] or 0)
+    except Exception:
+        _creator_for_gate = 0
+    # For non-staff (regular user) creators, never expose the exam title in
+    # the poll question — keep prefix always off, regardless of draft setting.
+    if _creator_for_gate and not _real_user_has_staff_access(_creator_for_gate):
+        show_title = False
     q_text = _strip_question_brand_prefix(_smart_clean_question_text(str(q['question'] or ''))) or f'Question {next_index}'
     title_label = ''
     try:
