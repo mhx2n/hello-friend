@@ -2492,7 +2492,7 @@ _ADV_EDIT_STATES = {
 
 
 def _smart_clean_question_text(raw: str) -> str:
-    original = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    original = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not original:
         return ""
     value = original
@@ -2520,7 +2520,7 @@ def _smart_clean_question_text(raw: str) -> str:
 
 
 def _smart_clean_option_text(raw: str) -> str:
-    value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    value = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not value:
         return ""
     for mark in CHECKMARKS:
@@ -2534,7 +2534,7 @@ def _smart_clean_option_text(raw: str) -> str:
 
 
 def _smart_clean_explanation_text(raw: str) -> str:
-    value = base.normalize_visual_text(urllib.parse.unquote(raw or ""))
+    value = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     value = re.sub(r"[ \t]+", " ", value)
     value = re.sub(r" *\n *", "\n", value)
     value = re.sub(r"\n{3,}", "\n\n", value)
