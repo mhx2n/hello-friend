@@ -5871,6 +5871,7 @@ def everyone_private_commands() -> List[BotCommand]:
     return _unique_bot_commands([
         BotCommand("start", "Activate bot or open practice link"),
         BotCommand("panel", "Open your main panel"),
+        BotCommand("mydrafts", "Show your exam drafts"),
         BotCommand("pauseq", "Pause private practice"),
         BotCommand("resumeq", "Resume private practice"),
         BotCommand("skipq", "Skip current private question"),
