@@ -3831,7 +3831,15 @@ def _build_question_manager_text_markup(user_id: int, draft_id: str, page: int =
 
 def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: str = '') -> Tuple[str, InlineKeyboardMarkup]:
     drafts = list(base.list_user_drafts(user_id))
-    drafts = sorted(drafts, key=lambda r: int(r['updated_at']), reverse=True)
+    privileged_view = _is_privileged(user_id)
+    def _bucket(row: Any) -> Tuple[int, str]:
+        oid = int(row['owner_id'])
+        if base.is_owner(oid):
+            return (0, 'Owner-created exams')
+        if base.is_bot_admin(oid):
+            return (1, 'Admin-created exams')
+        return (2, 'User-created exams')
+    drafts = sorted(drafts, key=lambda r: (_bucket(r)[0] if privileged_view else 0, -int(r['updated_at'])))
     if not drafts:
         text = ((header + '\n\n') if header else '') + '<b>Your Draft Browser</b>\n\nNo drafts yet.'
         return text, InlineKeyboardMarkup([[InlineKeyboardButton('◂️ Back', callback_data='panel:home')]])
@@ -3846,11 +3854,17 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
         lines += [header, '']
     lines += ['<b>Your Draft Browser</b>', f'Page <b>{page+1}/{total_pages}</b> • Total <b>{len(drafts)}</b>', '']
     kb_rows = []
+    last_bucket = ''
     for idx, row in enumerate(page_rows, start=start + 1):
+        bucket_label = _bucket(row)[1] if privileged_view else ''
+        if bucket_label and bucket_label != last_bucket:
+            lines.append(f'<b>{base.html_escape(bucket_label)}</b>')
+            last_bucket = bucket_label
         prefix = 'ON' if _draft_prefix_state(row) else 'OFF'
         status = 'ACTIVE' if active_id == row['id'] else ('Ready' if _safe_int(row['q_count']) > 0 else 'Draft')
         lines.append(f'<b>{idx}. {base.html_escape(row["title"])}</b>')
-        lines.append(f'Code: <code>{row["id"]}</code> • Q: <b>{row["q_count"]}</b> • {row["question_time"]} sec • -{row["negative_mark"]} • Prefix {prefix} • {status}')
+        creator = f' • Creator: <code>{row["owner_id"]}</code>' if privileged_view else ''
+        lines.append(f'Code: <code>{row["id"]}</code>{creator} • Q: <b>{row["q_count"]}</b> • {row["question_time"]} sec • -{row["negative_mark"]} • Prefix {prefix} • {status}')
         lines.append('')
         kb_rows.append([InlineKeyboardButton(f'▸ {row["id"]}', callback_data=f'ux:open:{row["id"]}:{page}'), InlineKeyboardButton('◆ Active' if active_id == row['id'] else '↻ Active', callback_data=f'ux:set:{row["id"]}:{page}')])
     nav = []
