@@ -5211,10 +5211,12 @@ def _latex_to_pretty_text(raw: str) -> str:
     text = text.replace('{', '').replace('}', '')
     text = re.sub(r'\\([A-Za-z]+)', r'\1', text)
     text = text.replace('\\', '')
-    text = re.sub(r'\s*⇒\s*', ' ⇒ ', text)
-    text = re.sub(r'\s*→\s*', ' → ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return base.normalize_visual_text(text).strip()
+    text = re.sub(r'[ \t\f\v]*⇒[ \t\f\v]*', ' ⇒ ', text)
+    text = re.sub(r'[ \t\f\v]*→[ \t\f\v]*', ' → ', text)
+    text = re.sub(r'[ \t\f\v]+', ' ', text)
+    text = re.sub(r' *\n *', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return "\n".join(base.normalize_visual_text(line).strip() for line in text.split("\n")).strip()
 
 
 def _html_from_display_text(raw: str) -> str:
