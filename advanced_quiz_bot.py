@@ -5596,6 +5596,9 @@ body{font-family:'Inter','Noto Sans Bengali',system-ui,-apple-system,'Segoe UI',
 .section-h{font-size:clamp(18px,2.4vw,22px);font-weight:800;margin:0 0 14px;letter-spacing:-.01em}
 .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px}
 .stat{padding:16px;border-radius:16px;background:var(--soft);border:1px solid var(--border);min-width:0}
+.stat.ok{background:rgba(22,101,52,.10);border-color:rgba(22,101,52,.35)}
+.stat.bad{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.35)}
+.stat.warn{background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.35)}
 .label{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 .value{font-size:clamp(22px,3vw,30px);font-weight:900;margin-top:6px;letter-spacing:-.02em;word-break:break-word}
 .two{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
