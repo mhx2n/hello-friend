@@ -2585,6 +2585,12 @@ async def send_admin_pdf_report(context, session_id: str, ranking: List[Dict[str
     session = base.get_session(session_id)
     if not session:
         return
+    # Practice / private inbox sessions must never produce the admin PDF +
+    # HTML analysis report. Telegram private chat ids are positive; group /
+    # supergroup ids are negative. This is a defensive belt for cases where
+    # known_chats has no row yet (chat_type lookup would falsely report "").
+    if int(session["chat_id"]) > 0:
+        return
     rows = base.DBH.fetchall("SELECT score FROM participants WHERE session_id=? AND eligible=1", (session_id,))
     scores = [float(r["score"]) for r in rows] or [0.0]
     creator_id = int(session["created_by"])
