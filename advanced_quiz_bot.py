@@ -4258,6 +4258,10 @@ def _latex_to_pretty_text(raw: str) -> str:
     return base.normalize_visual_text(text).strip()
 
 
+def _latex_to_poll_text(raw: str) -> str:
+    return "\n".join(_latex_to_pretty_text(line) for line in str(raw or "").replace("\r", "").split("\n")).strip()
+
+
 def _html_from_display_text(raw: str) -> str:
     return base.html_escape(_latex_to_pretty_text(raw)).replace('\n', '<br>')
 
