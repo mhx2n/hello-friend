@@ -5450,10 +5450,12 @@ def render_scroll_exam_html(draft: Any, owner_id: int) -> str:
     tpl = """<!DOCTYPE html>
 <html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'><title>__TITLE__</title>
 <style>
-:root{--accent:__ACCENT__;--accent-soft:__ACCENT_SOFT__;--danger:__DANGER__;--success:__SUCCESS__;--warning:__WARNING__;--radius:22px;--shadow:0 14px 38px rgba(15,23,42,.10)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial,'Noto Sans Bengali',sans-serif;background:var(--page-bg);color:var(--text);transition:.2s;background-attachment:fixed}
-body[data-theme='light']{--page-bg:linear-gradient(180deg,#f8fbff,#eff4fb 55%,#f7fafc);--text:#0f172a;--muted:#5b6778;--surface:#ffffff;--surface-2:#f8fafc;--border:#dbe4f0;--glass:rgba(255,255,255,.84);--chip:rgba(37,99,235,.08)}
-body[data-theme='dark']{--page-bg:radial-gradient(circle at top,#10213c 0,#05070b 52%,#020407 100%);--text:#f7fafc;--muted:#94a3b8;--surface:#0a1323;--surface-2:#0e1a2f;--border:rgba(148,163,184,.18);--glass:rgba(5,7,11,.9);--chip:rgba(148,163,184,.12)}
+:root{--accent:__ACCENT__;--accent-soft:__ACCENT_SOFT__;--danger:__DANGER__;--success:__SUCCESS__;--warning:__WARNING__;--radius:22px;--shadow:0 14px 38px rgba(15,23,42,.10);--page-bg:#05070b;--text:#f7fafc}
+html[data-theme='light'],body[data-theme='light']{--page-bg:#f1f5fb}
+html[data-theme='dark'],body[data-theme='dark']{--page-bg:#05070b}
+*{box-sizing:border-box}html,body{background:var(--page-bg);overscroll-behavior:none;-webkit-overflow-scrolling:touch}html{scroll-behavior:smooth;min-height:100%}body{margin:0;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial,'Noto Sans Bengali',sans-serif;color:var(--text);transition:.2s;background-attachment:fixed;min-height:100vh}
+body[data-theme='light']{--page-bg:linear-gradient(180deg,#f8fbff,#eff4fb 55%,#f7fafc) fixed;--text:#0f172a;--muted:#5b6778;--surface:#ffffff;--surface-2:#f8fafc;--border:#dbe4f0;--glass:rgba(255,255,255,.84);--chip:rgba(37,99,235,.08)}
+body[data-theme='dark']{--page-bg:radial-gradient(circle at top,#10213c 0,#05070b 52%,#020407 100%) fixed;--text:#f7fafc;--muted:#94a3b8;--surface:#0a1323;--surface-2:#0e1a2f;--border:rgba(148,163,184,.18);--glass:rgba(5,7,11,.9);--chip:rgba(148,163,184,.12)}
 img{max-width:100%;display:block}.page{display:none;min-height:100vh}.page.active{display:block}.shell{width:min(1120px,100% - 24px);margin-inline:auto}
 .topbar{position:fixed;inset:0 0 auto 0;z-index:90;background:var(--glass);backdrop-filter:blur(18px);border-bottom:1px solid var(--border)}.topbar .inner{width:min(1120px,100% - 24px);margin:auto;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0}.brand h1{margin:0;font-size:clamp(22px,3.8vw,34px);line-height:1.1}.meta{font-size:clamp(12px,2vw,15px);color:var(--muted)}
 .timer{padding:12px 16px;border-radius:18px;background:var(--surface);border:1px solid var(--border);min-width:120px;text-align:center;box-shadow:var(--shadow)}.timer .label{font-size:12px;color:var(--muted)}.timer .value{font-size:clamp(22px,4vw,30px);font-weight:900}
@@ -5474,7 +5476,7 @@ img{max-width:100%;display:block}.page{display:none;min-height:100vh}.page.activ
 <div id='resultPage' class='page'><div class='result-wrap shell'><div class='hero-result card'><div class='brand-line'>__BRAND__</div><div class='muted'>__TITLE__</div><div id='resultName' class='result-title'>Result</div><div id='resultScore' class='score-ring'>0.00</div><div class='muted'>Professional performance report</div><div id='summaryGrid' class='summary-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900;margin-bottom:12px'>Section Analysis</div><div id='sectionResultGrid' class='section-grid'></div></div><div class='card' style='padding:22px;margin-top:16px'><div style='font-size:24px;font-weight:900'>Answer Review</div><div class='tabs'><button class='tab active' data-filter='all'>All</button><button class='tab' data-filter='correct'>Correct</button><button class='tab' data-filter='wrong'>Wrong</button><button class='tab' data-filter='skipped'>Skipped</button></div><div id='reviewList' class='review-list'></div></div></div></div>
     <script>
     const QUESTIONS=__DATA__; const SECTIONS=__SECTIONS__; const NEGATIVE_MARK=__NEG_FLOAT__; const QUESTION_TIME=__QTIME__; let selectedSections=new Set(SECTIONS), active=[], answers={}, totalSeconds=0, leftSeconds=0, timer=null, currentQuestion=0, submitted=false;
-const $=(id)=>document.getElementById(id); function fmt(sec){sec=Math.max(0,Math.floor(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');} function typesetMath(){if(window.MathJax&&window.MathJax.typesetPromise){window.MathJax.typesetPromise().catch(()=>{});}} function toggleTheme(){document.body.setAttribute('data-theme',document.body.getAttribute('data-theme')==='dark'?'light':'dark');}
+const $=(id)=>document.getElementById(id); function fmt(sec){sec=Math.max(0,Math.floor(sec));const m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');} function typesetMath(){if(window.MathJax&&window.MathJax.typesetPromise){window.MathJax.typesetPromise().catch(()=>{});}} function toggleTheme(){const nm=document.body.getAttribute('data-theme')==='dark'?'light':'dark';document.body.setAttribute('data-theme',nm);document.documentElement.setAttribute('data-theme',nm);} document.documentElement.setAttribute('data-theme',document.body.getAttribute('data-theme')||'dark');
 $('toggleThemeBtn').onclick=toggleTheme;
     function buildSectionSelectors(){const wrap=$('sectionsWrap'); const box=$('sectionBox'); box.innerHTML=''; if(!SECTIONS.length){wrap.style.display='none'; return;} wrap.style.display='block'; SECTIONS.forEach(sec=>{const label=document.createElement('label'); label.className='chip'; label.innerHTML=`<input type='checkbox' checked> <span>${sec}</span>`; const input=label.querySelector('input'); input.onchange=()=>{ if(input.checked) selectedSections.add(sec); else selectedSections.delete(sec);}; box.appendChild(label);});}
 function showPage(id){['startPage','examPage','resultPage'].forEach(x=>$(x).classList.remove('active')); $(id).classList.add('active');}
@@ -5539,6 +5541,9 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
     summary_html = ''.join([
         f"<div class='stat'><div class='label'>Rank</div><div class='value'>#{rank_item['rank']}/{total_users}</div></div>",
         f"<div class='stat'><div class='label'>Score</div><div class='value'>{score}</div></div>",
+        f"<div class='stat ok'><div class='label'>Correct</div><div class='value'>{correct}</div></div>",
+        f"<div class='stat bad'><div class='label'>Wrong</div><div class='value'>{wrong}</div></div>",
+        f"<div class='stat warn'><div class='label'>Skipped</div><div class='value'>{skipped}</div></div>",
         f"<div class='stat'><div class='label'>Accuracy</div><div class='value'>{accuracy:.2f}%</div></div>",
         f"<div class='stat'><div class='label'>Percentage</div><div class='value'>{percentage:.2f}%</div></div>",
         f"<div class='stat'><div class='label'>Percentile</div><div class='value'>{percentile:.2f}</div></div>",
@@ -5591,6 +5596,9 @@ body{font-family:'Inter','Noto Sans Bengali',system-ui,-apple-system,'Segoe UI',
 .section-h{font-size:clamp(18px,2.4vw,22px);font-weight:800;margin:0 0 14px;letter-spacing:-.01em}
 .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px}
 .stat{padding:16px;border-radius:16px;background:var(--soft);border:1px solid var(--border);min-width:0}
+.stat.ok{background:rgba(22,101,52,.10);border-color:rgba(22,101,52,.35)}
+.stat.bad{background:rgba(190,18,60,.10);border-color:rgba(190,18,60,.35)}
+.stat.warn{background:rgba(202,138,4,.12);border-color:rgba(202,138,4,.35)}
 .label{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 .value{font-size:clamp(22px,3vw,30px);font-weight:900;margin-top:6px;letter-spacing:-.02em;word-break:break-word}
 .two{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
@@ -5914,11 +5922,26 @@ try:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
 
+    async def _force_role_panel(update, context):
+        try:
+            user = getattr(update, "effective_user", None)
+            chat = getattr(update, "effective_chat", None)
+            if not user or not chat or chat.type != "private":
+                return
+            try:
+                base.mark_started(user)
+            except Exception:
+                pass
+            await _patched_refresh_user_panel_by_id(context, user.id)
+        except Exception:
+            pass
+
     def _patched_build_app_final():
         app = _orig_build_app_final()
         try:
             app.add_handler(_CommandHandler("start", _force_role_start), group=-100)
             app.add_handler(_CommandHandler(["help", "commands", "cmds"], _force_role_commands), group=-100)
+            app.add_handler(_CommandHandler(["panel", "menu", "home"], _force_role_panel), group=-100)
         except Exception:
             pass
         return app
