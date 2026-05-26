@@ -233,21 +233,21 @@ def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int
     """
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
     if sec:
-        head += f"  •  {sec}"
-    return head + "\n━━━━━━━━━━━━━━\n"
+        head += f"  {sec}"
+    return head + "\n\n"
 
 
 def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
     if sec:
-        head += f"  •  {sec}"
-    # Force a hard visual break before the question body so the section /
-    # brand prefix never glues onto the question text inside the poll card.
-    return head + "\n━━━━━━━━━━━━━━\n"
+        head += f"  {sec}"
+    # Keep the metadata above the question and force the actual question to
+    # start on its own line; no decorative line is placed after the counter.
+    return head + "\n\n"
 
 
 base._build_question_prefix = _build_question_prefix
@@ -5105,6 +5105,15 @@ def _draft_prefix_state(draft: Any) -> bool:
     return str(raw).strip().lower() not in {'0', 'false', 'off', 'no'}
 
 
+def _strip_leading_quiz_label(text: str, label: str) -> str:
+    value = (text or '').strip()
+    clean_label = base.normalize_visual_text(label or '').strip()
+    if len(clean_label) < 3 or not value:
+        return value
+    pattern = r'^\s*' + re.escape(clean_label) + r'(?:\s*[:：|।\-–—]\s*|\s+)'
+    return re.sub(pattern, '', value, count=1, flags=re.IGNORECASE).strip() or value
+
+
 async def begin_or_advance_exam(context, session_id: str) -> None:
     session = base.get_session(session_id)
     if not session or session['status'] != 'running':
@@ -5127,12 +5136,28 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
     q_text = _strip_question_brand_prefix(_smart_clean_question_text(str(q['question'] or ''))) or f'Question {next_index}'
+    title_label = ''
+    try:
+        if show_title and draft_row:
+            title_label = base.normalize_visual_text(str(draft_row['title'] or '')).strip()
+    except Exception:
+        title_label = ''
+    if title_label:
+        q_text = _strip_leading_quiz_label(q_text, title_label)
+    if section_title:
+        q_text = _strip_leading_quiz_label(q_text, section_title)
+    label_parts = [x for x in (title_label, section_title) if x]
+    display_label_parts: List[str] = []
+    for label in label_parts:
+        if label.casefold() not in {x.casefold() for x in display_label_parts}:
+            display_label_parts.append(label)
+    header_label = '  •  '.join(display_label_parts)
     prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
     try:
         creator_id = int(session['created_by'] or 0)
     except Exception:
         creator_id = 0
-    question_prefix = _build_poll_question_prefix(next_index, total, creator_id=creator_id, section_title=section_title)
+    question_prefix = _build_poll_question_prefix(next_index, total, creator_id=creator_id, section_title=header_label)
     poll_question = (question_prefix + _latex_to_poll_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
@@ -5765,9 +5790,10 @@ except Exception:
 
 
 try:
-    from telegram import BotCommandScopeAllPrivateChats as _ScopeAll, BotCommandScopeAllChatAdministrators as _ScopeGAdm, BotCommandScopeChat as _ScopeChat
+    from telegram import BotCommandScopeAllPrivateChats as _ScopeAll, BotCommandScopeAllChatAdministrators as _ScopeGAdm, BotCommandScopeChat as _ScopeChat, MenuButtonCommands as _MenuButtonCommands
 except Exception:
     _ScopeAll = _ScopeGAdm = _ScopeChat = None
+    _MenuButtonCommands = None
 
 
 async def _patched_refresh_scoped_commands(bot) -> None:
@@ -5782,6 +5808,9 @@ async def _patched_refresh_scoped_commands(bot) -> None:
         return
     with suppress(Exception):
         await bot.set_my_commands(everyone, scope=_ScopeAll())
+    if _MenuButtonCommands is not None:
+        with suppress(Exception):
+            await bot.set_chat_menu_button(menu_button=_MenuButtonCommands())
     with suppress(Exception):
         await bot.set_my_commands(group_cmds, scope=_ScopeGAdm())
     try:
@@ -5798,6 +5827,98 @@ async def _patched_refresh_scoped_commands(bot) -> None:
 
 
 base.refresh_scoped_commands = _patched_refresh_scoped_commands
+
+
+def _unique_bot_commands(commands: Iterable[BotCommand]) -> List[BotCommand]:
+    seen: set[str] = set()
+    unique: List[BotCommand] = []
+    for cmd in commands:
+        name = getattr(cmd, "command", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        unique.append(cmd)
+    return unique[:100]
+
+
+def everyone_private_commands() -> List[BotCommand]:
+    return _unique_bot_commands([
+        BotCommand("start", "Activate bot or open practice link"),
+        BotCommand("panel", "Open your main panel"),
+        BotCommand("newexam", "Create a new exam draft"),
+        BotCommand("drafts", "Show your exam drafts"),
+        BotCommand("mydrafts", "Show your exam drafts"),
+        BotCommand("draftinfo", "Show draft details"),
+        BotCommand("importtext", "Import MCQs from text or TXT"),
+        BotCommand("txtquiz", "Import MCQs from text or TXT"),
+        BotCommand("clonequiz", "Import forwarded quiz polls"),
+        BotCommand("cloneend", "Finish quiz-poll import"),
+        BotCommand("csvformat", "Show CSV import format"),
+        BotCommand("section", "Add one or many sections"),
+        BotCommand("sections", "List draft sections"),
+        BotCommand("clearsections", "Remove all draft sections"),
+        BotCommand("settitle", "Edit draft title"),
+        BotCommand("settime", "Edit question time"),
+        BotCommand("setneg", "Edit negative marking"),
+        BotCommand("shuffle", "Shuffle draft questions"),
+        BotCommand("delq", "Delete draft questions"),
+        BotCommand("exporthtml", "Export HTML practice exam"),
+        BotCommand("htmlexam", "Export HTML practice exam"),
+        BotCommand("creator", "Show draft creator info"),
+        BotCommand("filter", "Remove words from future quizzes"),
+        BotCommand("filters", "Show saved quiz filters"),
+        BotCommand("renamefile", "Rename a file in bot inbox"),
+        BotCommand("setthumb", "Set preview thumbnail"),
+        BotCommand("clearthumb", "Clear preview thumbnail"),
+        BotCommand("thumbstatus", "Show thumbnail status"),
+        BotCommand("pauseq", "Pause private practice"),
+        BotCommand("resumeq", "Resume private practice"),
+        BotCommand("skipq", "Skip current private question"),
+        BotCommand("stoptqex", "Stop private exam or practice"),
+        BotCommand("help", "Help and commands"),
+        BotCommand("commands", "Full command list"),
+        BotCommand("cancel", "Cancel current input flow"),
+    ])
+
+
+def admin_private_commands() -> List[BotCommand]:
+    return everyone_private_commands()
+
+
+def owner_private_commands() -> List[BotCommand]:
+    return _unique_bot_commands(everyone_private_commands() + [
+        BotCommand("theme", "Leaderboard theme settings"),
+        BotCommand("addadmin", "Add isolated admin"),
+        BotCommand("addadminalp", "Add all-access admin"),
+        BotCommand("rmadmin", "Remove admin"),
+        BotCommand("admins", "List admin roles"),
+        BotCommand("audit", "Recent admin actions"),
+        BotCommand("logs", "Bot logs summary"),
+        BotCommand("stats", "Owner statistics"),
+        BotCommand("broadcast", "Broadcast to groups and users"),
+        BotCommand("announce", "Announce to one chat"),
+        BotCommand("setbrand", "Set quiz branding text"),
+        BotCommand("brand", "Show current branding"),
+        BotCommand("getbrand", "Show current branding"),
+        BotCommand("setchannel", "Set required join channel"),
+        BotCommand("getchannel", "Show required join channel"),
+        BotCommand("setwelcome", "Set welcome message"),
+        BotCommand("welcome", "Preview welcome message"),
+        BotCommand("clearwelcome", "Disable welcome message"),
+        BotCommand("setbuttons", "Configure welcome buttons"),
+        BotCommand("clearbuttons", "Remove welcome buttons"),
+        BotCommand("setdefaultexplanation", "Set default explanation"),
+        BotCommand("cleardefaultexplanation", "Clear default explanation"),
+        BotCommand("exporttheme", "Set or list result themes"),
+        BotCommand("backupnow", "Create a database backup"),
+        BotCommand("restorebackup", "Restore latest backup"),
+        BotCommand("restart", "Restart bot"),
+    ])
+
+
+base.everyone_private_commands = everyone_private_commands
+base.admin_private_commands = admin_private_commands
+base.owner_private_commands = owner_private_commands
 
 
 _prev_handle_text_final = base.handle_text
