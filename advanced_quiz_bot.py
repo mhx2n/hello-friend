@@ -377,34 +377,25 @@ async def _patched_handle_poll_answer(update, context):
     if answer and answer.user:
         # Pre-warm the cache so the base function's check is fast & consistent
         await _patched_is_required_channel_member(context, answer.user.id)
-    result = await _orig_handle_poll_answer(update, context)
-    # Fallback auto-advance for private-inbox practice/exam sessions when
-    # known_chats has no chat_type recorded (the base function relies on it).
-    try:
-        if answer and answer.user and answer.poll_id:
-            qrow = base.get_question_by_poll(answer.poll_id)
-            if qrow and qrow["session_status"] == "running":
-                session = base.get_session(qrow["session_id"])
-                if session and int(session["chat_id"]) == int(answer.user.id):
-                    # Private inbox: advance immediately after the answer.
-                    close_job_name = f"close:{qrow['session_id']}:{qrow['q_no']}"
-                    for job in context.job_queue.get_jobs_by_name(close_job_name):
-                        job.schedule_removal()
-                    with suppress(Exception):
-                        await context.bot.stop_poll(
-                            chat_id=session["chat_id"],
-                            message_id=int(qrow["message_id"] or 0),
-                        )
-                    base.set_session_active_poll(qrow["session_id"], None, None)
-                    context.job_queue.run_once(
-                        base.begin_or_advance_exam_job,
-                        when=0.2,
-                        data={"session_id": qrow["session_id"]},
-                        name=f"advance:{qrow['session_id']}:dm:{qrow['q_no']}",
-                    )
-    except Exception:
-        pass
-    return result
+        # Safety belt: ensure the user's private chat is marked as chat_type='private'
+        # in known_chats so the base auto-advance + private-only finalization run correctly.
+        # Without this, a missing row makes is_private_exam False and the bot would
+        # both fire group-style reports AND fail to advance after the answer.
+        with suppress(Exception):
+            base.DBH.execute(
+                """
+                INSERT INTO known_chats(chat_id, title, username, chat_type, active, last_seen)
+                VALUES(?,?,?,?,1,?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    chat_type='private', active=1, last_seen=excluded.last_seen
+                """,
+                (answer.user.id, answer.user.full_name or str(answer.user.id),
+                 answer.user.username, "private", base.now_ts()),
+            )
+    # Delegate to base handler — it already handles auto-advance for private
+    # inbox sessions. Do NOT schedule a second advance here (caused duplicate
+    # polls / same question appearing twice in a row).
+    return await _orig_handle_poll_answer(update, context)
 
 
 base.handle_poll_answer = _patched_handle_poll_answer
