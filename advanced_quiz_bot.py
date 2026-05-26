@@ -5946,6 +5946,7 @@ try:
 
             await _delete_pending_welcome_message(context, user.id)
             await _patched_refresh_user_panel_by_id(context, user.id)
+            raise ApplicationHandlerStop
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5966,6 +5967,7 @@ try:
                 pass
             text = build_commands_text(chat.type, is_admin_u, is_owner_u)
             await base.safe_reply(message, text)
+            raise ApplicationHandlerStop
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5981,6 +5983,7 @@ try:
             except Exception:
                 pass
             await _patched_refresh_user_panel_by_id(context, user.id)
+            raise ApplicationHandlerStop
         except Exception:
             pass
 
