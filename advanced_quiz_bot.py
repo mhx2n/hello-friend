@@ -5541,6 +5541,9 @@ def render_user_result_html(session: Any, participant_row: Any, rank_item: Dict[
     summary_html = ''.join([
         f"<div class='stat'><div class='label'>Rank</div><div class='value'>#{rank_item['rank']}/{total_users}</div></div>",
         f"<div class='stat'><div class='label'>Score</div><div class='value'>{score}</div></div>",
+        f"<div class='stat ok'><div class='label'>Correct</div><div class='value'>{correct}</div></div>",
+        f"<div class='stat bad'><div class='label'>Wrong</div><div class='value'>{wrong}</div></div>",
+        f"<div class='stat warn'><div class='label'>Skipped</div><div class='value'>{skipped}</div></div>",
         f"<div class='stat'><div class='label'>Accuracy</div><div class='value'>{accuracy:.2f}%</div></div>",
         f"<div class='stat'><div class='label'>Percentage</div><div class='value'>{percentage:.2f}%</div></div>",
         f"<div class='stat'><div class='label'>Percentile</div><div class='value'>{percentile:.2f}</div></div>",
