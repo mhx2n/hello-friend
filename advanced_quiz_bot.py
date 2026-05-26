@@ -239,6 +239,15 @@ def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int
     return head + "\n\n"
 
 
+def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
+    brand = get_brand_text(creator_id)
+    sec = (section_title or "").strip()
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    if sec:
+        head += f"  •  {sec}"
+    return head + "\n\n"
+
+
 base._build_question_prefix = _build_question_prefix
 
 
