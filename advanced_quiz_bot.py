@@ -5765,9 +5765,10 @@ except Exception:
 
 
 try:
-    from telegram import BotCommandScopeAllPrivateChats as _ScopeAll, BotCommandScopeAllChatAdministrators as _ScopeGAdm, BotCommandScopeChat as _ScopeChat
+    from telegram import BotCommandScopeAllPrivateChats as _ScopeAll, BotCommandScopeAllChatAdministrators as _ScopeGAdm, BotCommandScopeChat as _ScopeChat, MenuButtonCommands as _MenuButtonCommands
 except Exception:
     _ScopeAll = _ScopeGAdm = _ScopeChat = None
+    _MenuButtonCommands = None
 
 
 async def _patched_refresh_scoped_commands(bot) -> None:
@@ -5782,6 +5783,9 @@ async def _patched_refresh_scoped_commands(bot) -> None:
         return
     with suppress(Exception):
         await bot.set_my_commands(everyone, scope=_ScopeAll())
+    if _MenuButtonCommands is not None:
+        with suppress(Exception):
+            await bot.set_chat_menu_button(menu_button=_MenuButtonCommands())
     with suppress(Exception):
         await bot.set_my_commands(group_cmds, scope=_ScopeGAdm())
     try:
