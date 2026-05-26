@@ -492,12 +492,12 @@ async def _patched_refresh_user_panel_by_id(context, user_id: int):
     else:
         text = (
             f"<b>{base.html_escape(brand)}</b>\n\n"
-            f"You can join live exams in groups where this bot is added, or open a shared practice link here in your inbox.\n\n"
-            f"<b>What you can do</b>\n"
-            f"• Take live group exams and appear on the leaderboard.\n"
-            f"• Open practice links and get your result.\n"
-            f"• Use /pauseq, /resumeq, /skipq, /stoptqex during private practice.\n"
-            f"• Use /commands to see the commands available to you only."
+            f"<b>Your Access</b>\n"
+            f"• Join live group exams.\n"
+            f"• Open practice links in this inbox.\n"
+            f"• Create your own exam after channel verification.\n"
+            f"• Save quiz text filters with /filter.\n\n"
+            f"Use /commands for your available commands."
         )
         rows = []
         try:
