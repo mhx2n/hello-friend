@@ -3554,7 +3554,7 @@ async def callback_router(update: Update, context) -> None:
                 'pneg': ('adv2_edit_neg', 'Send the negative mark now. Example: <code>0.25</code>'),
                 'padd': ('adv2_add_questions', 'Send MCQ text now, or upload a TXT/MD/JSON file. The bot will add every valid question and keep the inbox clean.'),
                 'pdelq': ('adv2_del_questions', 'Send question numbers to delete. Example: <code>3,5-7</code>'),
-                'psection': ('adv2_add_section', 'Send the section range in this format:\n<code>1-10 | Biology | 30</code>'),
+                'psection': ('adv2_add_section', 'Send one section per line:\n<code>1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>\n\nTime (the last number) is optional.'),
             }
             state_name, prompt = prompt_map[action]
             base.set_user_state(user.id, state_name, {'draft_id': draft_id, 'page': page})
