@@ -245,7 +245,9 @@ def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optiona
     head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
     if sec:
         head += f"  •  {sec}"
-    return head + "\n\n"
+    # Force a hard visual break before the question body so the section /
+    # brand prefix never glues onto the question text inside the poll card.
+    return head + "\n━━━━━━━━━━━━━━\n"
 
 
 base._build_question_prefix = _build_question_prefix
