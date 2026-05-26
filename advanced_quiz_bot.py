@@ -6202,8 +6202,58 @@ try:
         except Exception:
             pass
 
+    async def _purge_panels_on_command(update, context):
+        """Before any private-chat command runs, wipe ALL tracked panel
+        messages for this chat so the new command produces a fresh panel
+        at the bottom of the chat instead of editing a stale one above."""
+        try:
+            chat = getattr(update, "effective_chat", None)
+            user = getattr(update, "effective_user", None)
+            message = getattr(update, "effective_message", None)
+            if not chat or not user or not message or chat.type != "private":
+                return
+            text = (getattr(message, "text", None) or "").strip()
+            if not text.startswith("/"):
+                return
+            chat_id = chat.id
+            to_delete = set()
+            for store_name in ("_single_panel_current", "_single_panel_history", "panel_home_message"):
+                store = context.application.bot_data.get(store_name)
+                if not isinstance(store, dict):
+                    continue
+                stale_keys = []
+                for k, v in list(store.items()):
+                    # key formats vary: tuples like ('ux-draft', user_id) or plain user_id
+                    matches_chat = False
+                    if isinstance(k, tuple) and len(k) >= 2 and k[-1] == user.id:
+                        matches_chat = True
+                    elif k == user.id or k == chat_id:
+                        matches_chat = True
+                    if not matches_chat:
+                        continue
+                    if isinstance(v, (list, tuple)):
+                        for mid in v:
+                            with suppress(Exception):
+                                to_delete.add(int(mid))
+                    else:
+                        with suppress(Exception):
+                            to_delete.add(int(v))
+                    stale_keys.append(k)
+                for k in stale_keys:
+                    store.pop(k, None)
+            for mid in to_delete:
+                with suppress(Exception):
+                    await context.bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+
     def _patched_build_app_final():
         app = _orig_build_app_final()
+        try:
+            from telegram.ext import MessageHandler as _MessageHandler, filters as _filters
+            app.add_handler(_MessageHandler(_filters.ChatType.PRIVATE & _filters.COMMAND, _purge_panels_on_command), group=-200)
+        except Exception:
+            pass
         try:
             app.add_handler(_CommandHandler("start", _force_role_start), group=-100)
             app.add_handler(_CommandHandler(["help", "commands", "cmds"], _force_role_commands), group=-100)
