@@ -912,6 +912,7 @@ def copy_draft(draft_id: str, owner_id: int) -> str:
 
 
 async def import_text_into_draft(message, context, draft_id: str, text: str, src: str = "text") -> None:
+    text = apply_user_quiz_filters(getattr(message.from_user, "id", None), text)
     parsed = parse_marked_questions_from_text(text)
     if not parsed:
         await base.safe_reply(
@@ -2186,6 +2187,25 @@ async def handle_text(update: Update, context) -> None:
                 return
             stop_clone_session(user.id)
             await base.send_draft_card(context, user.id, user.id, clone["draft_id"], header="◆ Clone session finished.")
+            return
+
+        if cmd in {"filter", "filters"}:
+            phrase = _clean_filter_phrase(args)
+            if cmd == "filters" or not phrase:
+                current = get_user_quiz_filters(user.id)
+                text = "<b>Quiz Filters</b>\n\n" + ("\n".join(f"• <code>{base.html_escape(x)}</code>" for x in current) if current else "No saved filters.")
+                text += "\n\nUse: <code>/filter WORD</code>\nClear all: <code>/filter clear</code>"
+                await base.safe_reply(message, text, parse_mode=ParseMode.HTML)
+                return
+            if phrase.casefold() in {"clear", "off", "none"}:
+                base.DBH.execute("DELETE FROM user_quiz_filters WHERE user_id=?", (user.id,))
+                await base.safe_reply(message, "✅ All quiz filters cleared.")
+                return
+            base.DBH.execute(
+                "INSERT OR REPLACE INTO user_quiz_filters(user_id, phrase, created_at) VALUES(?,?,?)",
+                (user.id, phrase, base.now_ts()),
+            )
+            await base.safe_reply(message, f"✅ Saved filter: <code>{base.html_escape(phrase)}</code>", parse_mode=ParseMode.HTML)
             return
 
         if cmd == "draftinfo":
