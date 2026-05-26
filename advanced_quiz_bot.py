@@ -1125,6 +1125,20 @@ async def _start_practice_locked(update: Update, context: ContextTypes.DEFAULT_T
         with suppress(Exception):
             base.DBH.execute("UPDATE sessions SET status='stopped', ended_at=?, active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (base.now_ts(), active["id"]))
     base.register_practice_attempt(row["draft_id"], user.id)
+    # Make sure the user's private chat is recorded as chat_type='private' so
+    # the exam engine treats this as a practice/inbox session — otherwise it
+    # would fall through to group-style finalization (leaderboard + PDF/HTML
+    # report) on completion.
+    with suppress(Exception):
+        base.DBH.execute(
+            """
+            INSERT INTO known_chats(chat_id, title, username, chat_type, active, last_seen)
+            VALUES(?,?,?,?,1,?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                chat_type='private', active=1, last_seen=excluded.last_seen
+            """,
+            (user.id, user.full_name or str(user.id), user.username, "private", base.now_ts()),
+        )
     session_id = base.create_session_from_draft(row["draft_id"], user.id, user.id)
     if not session_id:
         await base.safe_reply(message, "Could not create the practice session.")
