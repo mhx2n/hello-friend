@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputTextMessageContent, Poll, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import Application, ContextTypes, InlineQueryHandler
+from telegram.ext import Application, ApplicationHandlerStop, ContextTypes, InlineQueryHandler
 from telegram import InlineQueryResultArticle
 
 BASE_PATH = Path(__file__).resolve().with_name("bot_base.py")
@@ -986,22 +986,36 @@ async def start_practice_from_token(update: Update, context: ContextTypes.DEFAUL
     if max_attempts > 0 and attempts >= max_attempts:
         await base.safe_reply(message, f"You have already used this practice exam {max_attempts} time(s).")
         return
-    existing = base.get_active_session(user.id)
-    if existing:
+    lock = base._operation_lock(context, f"practice:{user.id}") if hasattr(base, "_operation_lock") else None
+    if lock:
+        async with lock:
+            await _start_practice_locked(update, context, row, q_count)
+    else:
+        await _start_practice_locked(update, context, row, q_count)
+
+
+async def _start_practice_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, row: Any, q_count: int) -> None:
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return
+    active = base.get_active_session(user.id)
+    if active and str(active["draft_id"]) == str(row["draft_id"]) and int(active["started_at"] or 0) >= base.now_ts() - 8:
+        return
+    if active:
         with suppress(Exception):
-            base.DBH.execute("UPDATE sessions SET status='finished', active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (existing["id"],))
+            base.DBH.execute("UPDATE sessions SET status='stopped', ended_at=?, active_poll_id=NULL, active_poll_message_id=NULL WHERE id=?", (base.now_ts(), active["id"]))
     base.register_practice_attempt(row["draft_id"], user.id)
     session_id = base.create_session_from_draft(row["draft_id"], user.id, user.id)
     if not session_id:
         await base.safe_reply(message, "Could not create the practice session.")
         return
-    await base.safe_reply(
+    sent = await base.safe_reply(
         message,
-        f"<b>Practice Ready</b>\n<b>{base.html_escape(base.normalize_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>\n\nExam starting now...",
+        f"<b>Practice Ready</b>\n<b>{base.html_escape(_normalize_multiline_visual_text(row['title']))}</b>\n\nQuestions: <b>{q_count}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>",
         parse_mode=ParseMode.HTML,
     )
-    base.DBH.execute("UPDATE sessions SET status='running' WHERE id=?", (session_id,))
-    await begin_or_advance_exam(context, session_id)
+    await base.start_exam_countdown(context, session_id, existing_message_id=sent.message_id if sent else None)
 
 
 base.start_practice_from_token = start_practice_from_token
