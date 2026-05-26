@@ -1059,6 +1059,42 @@ async def start_practice_from_token(update: Update, context: ContextTypes.DEFAUL
         await _start_practice_locked(update, context, row, q_count)
 
 
+def _normalize_public_exam_code(raw_code: str) -> str:
+    return base.normalize_visual_text(raw_code or "").strip().split()[0].upper()
+
+
+async def start_practice_from_draft_code(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_code: str) -> bool:
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return True
+    code = _normalize_public_exam_code(raw_code)
+    if not code:
+        return False
+    base.record_user(user)
+    base.mark_started(user)
+    row = base.DBH.fetchone(
+        "SELECT d.id AS draft_id, d.owner_id, d.title, d.question_time, d.negative_mark, 0 AS max_attempts "
+        "FROM drafts d WHERE UPPER(d.id)=UPPER(?)",
+        (code,),
+    )
+    if not row:
+        await base.safe_reply(message, "This exam code is not available. Please check the code and try again.")
+        return True
+    q_count_row = base.DBH.fetchone("SELECT COUNT(*) AS c FROM draft_questions WHERE draft_id=?", (row["draft_id"],))
+    q_count = int(q_count_row["c"] if q_count_row else 0)
+    if q_count <= 0:
+        await base.safe_reply(message, "This exam code is saved, but it does not have any questions yet.")
+        return True
+    lock = base._operation_lock(context, f"practice:{user.id}") if hasattr(base, "_operation_lock") else None
+    if lock:
+        async with lock:
+            await _start_practice_locked(update, context, row, q_count)
+    else:
+        await _start_practice_locked(update, context, row, q_count)
+    return True
+
+
 async def _start_practice_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, row: Any, q_count: int) -> None:
     message = update.effective_message
     user = update.effective_user
@@ -1084,6 +1120,7 @@ async def _start_practice_locked(update: Update, context: ContextTypes.DEFAULT_T
 
 
 base.start_practice_from_token = start_practice_from_token
+base.start_practice_from_draft_code = start_practice_from_draft_code
 
 
 async def begin_or_advance_exam(context, session_id: str) -> None:
@@ -6123,6 +6160,10 @@ try:
             if (args_text or "").strip().startswith("practice_"):
                 # let original chain handle deep-link practice
                 return await _prev_handle_text_final(update, context)
+            if (args_text or "").strip():
+                handled = await start_practice_from_draft_code(update, context, args_text)
+                if handled:
+                    raise ApplicationHandlerStop
             try:
                 row = base.DBH.fetchone(
                     "SELECT started FROM known_users WHERE user_id=?", (user.id,)
