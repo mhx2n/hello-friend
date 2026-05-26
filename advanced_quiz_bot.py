@@ -1031,9 +1031,15 @@ async def start_practice_from_token(update: Update, context: ContextTypes.DEFAUL
         return
     base.record_user(user)
     base.mark_started(user)
-    row = base.get_practice_link_by_token(token)
+    # Resilient lookup: accept the practice link whether enabled or not,
+    # as long as the underlying draft still exists with questions.
+    row = base.DBH.fetchone(
+        "SELECT pl.*, d.title, d.question_time, d.negative_mark "
+        "FROM practice_links pl JOIN drafts d ON d.id=pl.draft_id WHERE pl.token=?",
+        (token,),
+    )
     if not row:
-        await base.safe_reply(message, "This practice link is invalid or disabled.")
+        await base.safe_reply(message, "This practice link is no longer available.")
         return
     q_count_row = base.DBH.fetchone("SELECT COUNT(*) AS c FROM draft_questions WHERE draft_id=?", (row["draft_id"],))
     q_count = int(q_count_row["c"] if q_count_row else 0)
