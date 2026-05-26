@@ -6160,6 +6160,10 @@ try:
             if (args_text or "").strip().startswith("practice_"):
                 # let original chain handle deep-link practice
                 return await _prev_handle_text_final(update, context)
+            if (args_text or "").strip():
+                handled = await start_practice_from_draft_code(update, context, args_text)
+                if handled:
+                    raise ApplicationHandlerStop
             try:
                 row = base.DBH.fetchone(
                     "SELECT started FROM known_users WHERE user_id=?", (user.id,)
