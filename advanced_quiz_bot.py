@@ -2388,28 +2388,30 @@ async def handle_text(update: Update, context) -> None:
 
         if cmd == "section":
             if "|" not in args:
-                await base.safe_reply(message, "Usage: /section DRAFTCODE 1-10 | Biology | 30")
+                await base.safe_reply(message, "Usage:\n/section DRAFTCODE 1-10 | Biology | 30\n\nOr multi-line:\n<code>/section DRAFTCODE\n1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>", parse_mode=ParseMode.HTML)
                 return
-            left, title, time_part = [x.strip() for x in args.split("|", 2)] if args.count("|") >= 2 else [x.strip() for x in args.split("|", 1)] + [""]
-            bits = left.split()
-            if len(bits) < 2:
-                await base.safe_reply(message, "Usage: /section DRAFTCODE 1-10 | Biology | 30")
-                return
-            draft = resolve_editable_draft(user.id, bits[0])
+            # First whitespace-separated token = draft code; everything
+            # after the first newline / remaining tokens = section body.
+            stripped = args.lstrip()
+            head, _, rest = stripped.partition("\n")
+            head_bits = head.split(None, 1)
+            code = head_bits[0] if head_bits else ""
+            first_line = head_bits[1] if len(head_bits) >= 2 else ""
+            body = first_line
+            if rest.strip():
+                body = (first_line + "\n" + rest) if first_line else rest
+            draft = resolve_editable_draft(user.id, code)
             if not draft:
                 await base.safe_reply(message, "Draft not found, or you do not have access.")
                 return
-            rng = bits[1]
-            if "-" not in rng:
-                await base.safe_reply(message, "Use a question range like 1-10.")
-                return
-            a, b = rng.split("-", 1)
-            if not (a.strip().isdigit() and b.strip().isdigit()):
-                await base.safe_reply(message, "Use numeric question ranges like 1-10.")
-                return
-            q_time = int(time_part) if time_part.strip().isdigit() else None
-            set_section(draft["id"], int(a), int(b), title or f"Section {a}-{b}", q_time)
-            await base.safe_reply(message, f"◆ Section added to <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
+            added_n, errors = _add_sections_bulk(draft["id"], body)
+            if added_n and not errors:
+                msg_text = f"◆ Added <b>{added_n}</b> section(s) to <code>{draft['id']}</code>."
+            elif added_n and errors:
+                msg_text = f"◆ Added <b>{added_n}</b> section(s). Skipped {len(errors)} invalid line(s)."
+            else:
+                msg_text = "▲️ Use one section per line: <code>1-10 | Biology | 30</code>"
+            await base.safe_reply(message, msg_text, parse_mode=ParseMode.HTML)
             return
 
         if cmd == "sections":
