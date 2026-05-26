@@ -3716,7 +3716,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, 'Select an active draft first.')
                 return
             base.set_user_state(user.id, 'adv2_add_section', {'draft_id': draft_id, 'page': 0})
-            await _show_prompt(context, user.id, f"<b>Add Section</b>\nCode: <code>{draft_id}</code>\n\nSend: <code>1-10 | Biology | 30</code>")
+            await _show_prompt(context, user.id, f"<b>Add Section(s)</b>\nCode: <code>{draft_id}</code>\n\nSend one section per line:\n<code>1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>\n\nTime (the last number) is optional.")
             return
     return await _prev_handle_text_v5(update, context)
 
