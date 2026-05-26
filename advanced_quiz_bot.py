@@ -5105,6 +5105,15 @@ def _draft_prefix_state(draft: Any) -> bool:
     return str(raw).strip().lower() not in {'0', 'false', 'off', 'no'}
 
 
+def _strip_leading_quiz_label(text: str, label: str) -> str:
+    value = (text or '').strip()
+    clean_label = base.normalize_visual_text(label or '').strip()
+    if len(clean_label) < 3 or not value:
+        return value
+    pattern = r'^\s*' + re.escape(clean_label) + r'(?:\s*[:：|।\-–—]\s*|\s+)'
+    return re.sub(pattern, '', value, count=1, flags=re.IGNORECASE).strip() or value
+
+
 async def begin_or_advance_exam(context, session_id: str) -> None:
     session = base.get_session(session_id)
     if not session or session['status'] != 'running':
@@ -5127,12 +5136,28 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
     q_text = _strip_question_brand_prefix(_smart_clean_question_text(str(q['question'] or ''))) or f'Question {next_index}'
+    title_label = ''
+    try:
+        if show_title and draft_row:
+            title_label = base.normalize_visual_text(str(draft_row['title'] or '')).strip()
+    except Exception:
+        title_label = ''
+    if title_label:
+        q_text = _strip_leading_quiz_label(q_text, title_label)
+    if section_title:
+        q_text = _strip_leading_quiz_label(q_text, section_title)
+    label_parts = [x for x in (title_label, section_title) if x]
+    display_label_parts: List[str] = []
+    for label in label_parts:
+        if label.casefold() not in {x.casefold() for x in display_label_parts}:
+            display_label_parts.append(label)
+    header_label = '  •  '.join(display_label_parts)
     prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
     try:
         creator_id = int(session['created_by'] or 0)
     except Exception:
         creator_id = 0
-    question_prefix = _build_poll_question_prefix(next_index, total, creator_id=creator_id, section_title=section_title)
+    question_prefix = _build_poll_question_prefix(next_index, total, creator_id=creator_id, section_title=header_label)
     poll_question = (question_prefix + _latex_to_poll_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
