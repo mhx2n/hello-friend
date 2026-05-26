@@ -795,6 +795,38 @@ def clear_sections(draft_id: str) -> None:
     base.DBH.execute("DELETE FROM draft_sections WHERE draft_id=?", (draft_id,))
 
 
+def _add_sections_bulk(draft_id: str, raw_text: str) -> Tuple[int, List[str]]:
+    """Parse a multi-line section block and persist each valid line.
+
+    One section per line: ``1-10 | Biology | 30`` (time optional).
+    Returns ``(added_count, [invalid_line, ...])``.
+    """
+    added = 0
+    errors: List[str] = []
+    for raw_line in str(raw_text or "").splitlines():
+        line = raw_line.strip().strip("•-*").strip()
+        if not line:
+            continue
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) < 2 or "-" not in parts[0]:
+            errors.append(raw_line)
+            continue
+        a, b = [x.strip() for x in parts[0].split("-", 1)]
+        if not (a.isdigit() and b.isdigit()):
+            errors.append(raw_line)
+            continue
+        title = parts[1] or f"Section {a}-{b}"
+        q_time = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
+        try:
+            set_section(draft_id, int(a), int(b), title, q_time)
+            added += 1
+        except Exception:
+            errors.append(raw_line)
+    return added, errors
+
+
+
+
 
 def apply_sections_to_session(session_id: str, draft_id: str) -> None:
     for row in list_sections(draft_id):
