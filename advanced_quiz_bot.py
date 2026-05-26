@@ -112,6 +112,13 @@ base.DBH.executescript(
         key   TEXT PRIMARY KEY,
         value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS user_quiz_filters (
+        user_id INTEGER NOT NULL,
+        phrase TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, phrase)
+    );
     """
 )
 
@@ -130,6 +137,25 @@ def set_setting(key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (key, str(value) if value is not None else ""),
     )
+
+
+def _clean_filter_phrase(raw: str) -> str:
+    return _normalize_multiline_visual_text(raw).replace("\n", " ").strip()[:80]
+
+
+def get_user_quiz_filters(user_id: int) -> List[str]:
+    rows = base.DBH.fetchall("SELECT phrase FROM user_quiz_filters WHERE user_id=? ORDER BY created_at ASC", (int(user_id),))
+    return [str(r["phrase"]) for r in rows if str(r["phrase"] or "").strip()]
+
+
+def apply_user_quiz_filters(user_id: Optional[int], text: str) -> str:
+    value = str(text or "")
+    if not user_id:
+        return value
+    for phrase in get_user_quiz_filters(int(user_id)):
+        if phrase:
+            value = re.sub(re.escape(phrase), "", value, flags=re.I)
+    return _normalize_multiline_visual_text(value)
 
 
 def get_brand_text(creator_id: Optional[int] = None) -> str:
