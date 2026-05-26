@@ -219,35 +219,26 @@ base.user_has_staff_access = user_has_staff_access
 
 def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     """
-    Professional poll header — clean multi-line alignment so a forwarded
-    quiz stays visually aligned. Format:
-
-        ✦ {brand}
-        ━━━━━━━━━━━━━━
-        {n} / {total}  •  {section}
-
-        {question text follows on its own block}
-
-    Note: the literal "Q" prefix is intentionally omitted so the index
-    reads as a plain "current / total" pair which looks cleaner.
+    Compact poll header that respects Telegram's 300-char poll question limit.
+    Format:
+        ✦ {brand}  •  {n}/{total}  •  {section}
+        {question text on its own line}
     """
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
+    head = f"✦ {brand}  •  {next_index}/{total}"
     if sec:
-        head += f"  {sec}"
-    return head + "\n\n"
+        head += f"  •  {sec}"
+    return head + "\n"
 
 
 def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
+    head = f"✦ {brand}  •  {next_index}/{total}"
     if sec:
-        head += f"  {sec}"
-    # Keep the metadata above the question and force the actual question to
-    # start on its own line; no decorative line is placed after the counter.
-    return head + "\n\n"
+        head += f"  •  {sec}"
+    return head + "\n"
 
 
 base._build_question_prefix = _build_question_prefix
