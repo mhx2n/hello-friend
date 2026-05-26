@@ -3642,18 +3642,13 @@ async def handle_text(update: Update, context) -> None:
             sanitize_existing_draft_questions(draft_id)
             header = f'◆ Removed <b>{removed}</b> question(s).'
         elif state == 'adv2_add_section':
-            parts = [x.strip() for x in txt.split('|')]
-            if len(parts) < 2 or '-' not in parts[0]:
-                header = '▲️ Use: <code>1-10 | Biology | 30</code>'
+            added_n, errors = _add_sections_bulk(draft_id, txt)
+            if added_n and not errors:
+                header = f'◆ Added <b>{added_n}</b> section(s).'
+            elif added_n and errors:
+                header = f'◆ Added <b>{added_n}</b> section(s). Skipped {len(errors)} invalid line(s).'
             else:
-                a, b = [x.strip() for x in parts[0].split('-', 1)]
-                if not (a.isdigit() and b.isdigit()):
-                    header = '▲️ Use numeric ranges like <code>1-10</code>.'
-                else:
-                    title = parts[1] if len(parts) >= 2 else f'Section {a}-{b}'
-                    q_time = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
-                    set_section(draft_id, int(a), int(b), title, q_time)
-                    header = f'◆ Section added: <b>{base.html_escape(title)}</b>.'
+                header = '▲️ Use one section per line:\n<code>1-10 | Biology | 30</code>'
         with suppress(Exception):
             await base.safe_delete_message(context.bot, chat.id, message.message_id)
         text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, header, context.bot_data.get('bot_username', ''))
