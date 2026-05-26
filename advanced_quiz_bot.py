@@ -3365,10 +3365,10 @@ async def handle_poll_import(update: Update, context) -> None:
         if draft_id and message.poll.type == Poll.QUIZ and message.poll.correct_option_id is not None:
             ok, q_no = dedup_add_question_to_draft(
                 draft_id,
-                message.poll.question,
-                [opt.text for opt in message.poll.options],
+                apply_user_quiz_filters(user.id, message.poll.question),
+                [apply_user_quiz_filters(user.id, opt.text) for opt in message.poll.options],
                 int(message.poll.correct_option_id),
-                message.poll.explanation or '',
+                apply_user_quiz_filters(user.id, message.poll.explanation or ''),
                 'quizbot_clone' if clone else 'forwarded_quiz',
             )
             sanitize_existing_draft_questions(draft_id)
