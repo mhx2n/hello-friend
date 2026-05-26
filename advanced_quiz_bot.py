@@ -5758,34 +5758,50 @@ try:
 
     def _patched_split_user_labels(display_name, username, fallback_user_id=None):
         main, sub = _orig_split_user_labels(display_name, username, fallback_user_id)
-        if main and main.startswith("User ") and main[5:].strip().isdigit():
+        # Resolve a real display name + @username from DB whenever possible.
+        real_name = ""
+        real_username = ""
+        try:
             raw = base.normalize_visual_text(display_name or "") if hasattr(base, "normalize_visual_text") else (display_name or "").strip()
-            if raw:
-                return raw[:80], sub
-            uname = (username or "").strip()
-            if uname:
-                return (uname if uname.startswith("@") else f"@{uname}")[:80], sub
-            if fallback_user_id:
-                try:
-                    urow = base.DBH.fetchone(
-                        "SELECT first_name, last_name, username FROM known_users WHERE user_id=?",
-                        (int(fallback_user_id),),
-                    )
-                except Exception:
-                    urow = None
-                if urow:
+        except Exception:
+            raw = (display_name or "").strip()
+        if raw:
+            real_name = raw
+        uname = (username or "").strip()
+        if uname:
+            real_username = uname if uname.startswith("@") else f"@{uname}"
+        if fallback_user_id and (not real_name or not real_username):
+            try:
+                urow = base.DBH.fetchone(
+                    "SELECT first_name, last_name, username FROM known_users WHERE user_id=?",
+                    (int(fallback_user_id),),
+                )
+            except Exception:
+                urow = None
+            if urow:
+                if not real_name:
                     full = " ".join(x for x in [urow["first_name"], urow["last_name"]] if x).strip()
                     if full:
-                        return full[:80], sub
+                        real_name = full
+                if not real_username:
                     un = (urow["username"] or "").strip()
                     if un:
-                        return (un if un.startswith("@") else f"@{un}")[:80], sub
+                        real_username = un if un.startswith("@") else f"@{un}"
+        # Compose main + sub: name as main, @username as sub when both exist.
+        if real_name and real_username and real_name != real_username:
+            return real_name[:80], real_username[:80]
+        if real_name:
+            return real_name[:80], sub or ""
+        if real_username:
+            return real_username[:80], sub or ""
+        if main and main.startswith("User ") and main[5:].strip().isdigit():
             return "Student", sub
         return main, sub
 
     base.split_user_labels = _patched_split_user_labels
 except Exception:
     pass
+
 
 
 try:
