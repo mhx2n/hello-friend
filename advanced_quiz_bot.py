@@ -5841,9 +5841,22 @@ def _unique_bot_commands(commands: Iterable[BotCommand]) -> List[BotCommand]:
 
 
 def everyone_private_commands() -> List[BotCommand]:
+    # Regular users see only what's allotted to them: practice controls + help.
     return _unique_bot_commands([
         BotCommand("start", "Activate bot or open practice link"),
         BotCommand("panel", "Open your main panel"),
+        BotCommand("pauseq", "Pause private practice"),
+        BotCommand("resumeq", "Resume private practice"),
+        BotCommand("skipq", "Skip current private question"),
+        BotCommand("stoptqex", "Stop private exam or practice"),
+        BotCommand("help", "Help and commands"),
+        BotCommand("commands", "Full command list"),
+        BotCommand("cancel", "Cancel current input flow"),
+    ])
+
+
+def _creator_extra_commands() -> List[BotCommand]:
+    return [
         BotCommand("newexam", "Create a new exam draft"),
         BotCommand("drafts", "Show your exam drafts"),
         BotCommand("mydrafts", "Show your exam drafts"),
@@ -5870,22 +5883,15 @@ def everyone_private_commands() -> List[BotCommand]:
         BotCommand("setthumb", "Set preview thumbnail"),
         BotCommand("clearthumb", "Clear preview thumbnail"),
         BotCommand("thumbstatus", "Show thumbnail status"),
-        BotCommand("pauseq", "Pause private practice"),
-        BotCommand("resumeq", "Resume private practice"),
-        BotCommand("skipq", "Skip current private question"),
-        BotCommand("stoptqex", "Stop private exam or practice"),
-        BotCommand("help", "Help and commands"),
-        BotCommand("commands", "Full command list"),
-        BotCommand("cancel", "Cancel current input flow"),
-    ])
+    ]
 
 
 def admin_private_commands() -> List[BotCommand]:
-    return everyone_private_commands()
+    return _unique_bot_commands(everyone_private_commands() + _creator_extra_commands())
 
 
 def owner_private_commands() -> List[BotCommand]:
-    return _unique_bot_commands(everyone_private_commands() + [
+    return _unique_bot_commands(admin_private_commands() + [
         BotCommand("theme", "Leaderboard theme settings"),
         BotCommand("addadmin", "Add isolated admin"),
         BotCommand("addadminalp", "Add all-access admin"),
@@ -5913,6 +5919,7 @@ def owner_private_commands() -> List[BotCommand]:
         BotCommand("restorebackup", "Restore latest backup"),
         BotCommand("restart", "Restart bot"),
     ])
+
 
 
 base.everyone_private_commands = everyone_private_commands
