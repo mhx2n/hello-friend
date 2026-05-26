@@ -613,7 +613,7 @@ def _strip_checkmark(text: str) -> Tuple[str, bool]:
 
 
 def question_signature(question: str, options: Iterable[str]) -> str:
-    merged = " || ".join([clean_forwarded_text(question)] + [clean_forwarded_text(x) for x in options])
+    merged = " || ".join([_strip_question_brand_prefix(clean_forwarded_text(question))] + [clean_forwarded_text(x) for x in options])
     merged = merged.casefold()
     merged = re.sub(r"\s+", " ", merged)
     return merged.strip()
@@ -2542,7 +2542,7 @@ def _smart_clean_question_text(raw: str) -> str:
     original = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not original:
         return ""
-    value = original
+    value = _strip_question_brand_prefix(original)
     value = re.sub(r"/view_[A-Za-z0-9_]+", " ", value)
     value = COUNTER_RE.sub("", value)
     value = re.sub(r"\[[^\]]{0,120}?@[^\]]+\]", " ", value)
@@ -2727,7 +2727,7 @@ def dedup_add_question_to_draft(draft_id: str, question: str, options: List[str]
     sig = question_signature(q, cleaned_options)
     if sig in existing_question_signatures(draft_id):
         return False, None
-    q_no = base.add_question_to_draft(draft_id, q, cleaned_options, int(new_correct), exp, src)
+    q_no = base.add_question_to_draft(draft_id, _ensure_question_brand_prefix(q), cleaned_options, int(new_correct), exp, src)
     return True, q_no
 
 
