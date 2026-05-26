@@ -280,7 +280,9 @@ async def _creator_channel_check(context, user_id: int) -> Tuple[bool, str]:
         return True, ""
     now = _time.time()
     cached = _membership_cache.get(int(user_id))
-    if cached and (now - cached[0] < _MEMBERSHIP_TTL):
+    # Cache positive membership only. A user may join the channel seconds after
+    # being rejected, so a cached False must never keep showing the join prompt.
+    if cached and cached[1] and (now - cached[0] < _MEMBERSHIP_TTL):
         return cached[1], channel
     blocked = {"left", "kicked", "banned"}
     try:
@@ -298,13 +300,22 @@ async def _creator_channel_check(context, user_id: int) -> Tuple[bool, str]:
 
 
 async def _send_creator_join_prompt(context, chat_id: int, channel: str) -> None:
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("Join Required Channel", url=f"https://t.me/{channel.lstrip('@')}")]])
+    store = context.bot_data.setdefault("creator_join_prompt", {})
+    old_mid = store.get(int(chat_id))
+    if old_mid:
+        with suppress(Exception):
+            await base.safe_delete_message(context.bot, int(chat_id), int(old_mid))
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Join Required Channel", url=f"https://t.me/{channel.lstrip('@')}")],
+        [InlineKeyboardButton("Verify & Continue", callback_data="panel:verify_join")],
+    ])
     with suppress(Exception):
-        await context.bot.send_message(
+        sent = await context.bot.send_message(
             chat_id,
             f"To create an exam you must first join {channel}. Join the channel and try again.",
             reply_markup=kb,
         )
+        store[int(chat_id)] = int(sent.message_id)
 
 
 def get_default_explanation_text() -> str:
@@ -5200,10 +5211,12 @@ def _latex_to_pretty_text(raw: str) -> str:
     text = text.replace('{', '').replace('}', '')
     text = re.sub(r'\\([A-Za-z]+)', r'\1', text)
     text = text.replace('\\', '')
-    text = re.sub(r'\s*⇒\s*', ' ⇒ ', text)
-    text = re.sub(r'\s*→\s*', ' → ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return base.normalize_visual_text(text).strip()
+    text = re.sub(r'[ \t\f\v]*⇒[ \t\f\v]*', ' ⇒ ', text)
+    text = re.sub(r'[ \t\f\v]*→[ \t\f\v]*', ' → ', text)
+    text = re.sub(r'[ \t\f\v]+', ' ', text)
+    text = re.sub(r' *\n *', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return "\n".join(base.normalize_visual_text(line).strip() for line in text.split("\n")).strip()
 
 
 def _html_from_display_text(raw: str) -> str:
