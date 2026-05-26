@@ -5758,34 +5758,50 @@ try:
 
     def _patched_split_user_labels(display_name, username, fallback_user_id=None):
         main, sub = _orig_split_user_labels(display_name, username, fallback_user_id)
-        if main and main.startswith("User ") and main[5:].strip().isdigit():
+        # Resolve a real display name + @username from DB whenever possible.
+        real_name = ""
+        real_username = ""
+        try:
             raw = base.normalize_visual_text(display_name or "") if hasattr(base, "normalize_visual_text") else (display_name or "").strip()
-            if raw:
-                return raw[:80], sub
-            uname = (username or "").strip()
-            if uname:
-                return (uname if uname.startswith("@") else f"@{uname}")[:80], sub
-            if fallback_user_id:
-                try:
-                    urow = base.DBH.fetchone(
-                        "SELECT first_name, last_name, username FROM known_users WHERE user_id=?",
-                        (int(fallback_user_id),),
-                    )
-                except Exception:
-                    urow = None
-                if urow:
+        except Exception:
+            raw = (display_name or "").strip()
+        if raw:
+            real_name = raw
+        uname = (username or "").strip()
+        if uname:
+            real_username = uname if uname.startswith("@") else f"@{uname}"
+        if fallback_user_id and (not real_name or not real_username):
+            try:
+                urow = base.DBH.fetchone(
+                    "SELECT first_name, last_name, username FROM known_users WHERE user_id=?",
+                    (int(fallback_user_id),),
+                )
+            except Exception:
+                urow = None
+            if urow:
+                if not real_name:
                     full = " ".join(x for x in [urow["first_name"], urow["last_name"]] if x).strip()
                     if full:
-                        return full[:80], sub
+                        real_name = full
+                if not real_username:
                     un = (urow["username"] or "").strip()
                     if un:
-                        return (un if un.startswith("@") else f"@{un}")[:80], sub
+                        real_username = un if un.startswith("@") else f"@{un}"
+        # Compose main + sub: name as main, @username as sub when both exist.
+        if real_name and real_username and real_name != real_username:
+            return real_name[:80], real_username[:80]
+        if real_name:
+            return real_name[:80], sub or ""
+        if real_username:
+            return real_username[:80], sub or ""
+        if main and main.startswith("User ") and main[5:].strip().isdigit():
             return "Student", sub
         return main, sub
 
     base.split_user_labels = _patched_split_user_labels
 except Exception:
     pass
+
 
 
 try:
@@ -5813,9 +5829,14 @@ async def _patched_refresh_scoped_commands(bot) -> None:
     with suppress(Exception):
         await bot.set_my_commands(group_cmds, scope=_ScopeGAdm())
     try:
-        admin_ids = list(base.all_admin_ids())
+        admin_ids = set(int(x) for x in base.all_admin_ids())
     except Exception:
-        admin_ids = []
+        admin_ids = set()
+    try:
+        creator_rows = base.DBH.fetchall("SELECT DISTINCT created_by FROM drafts WHERE created_by IS NOT NULL")
+        creator_ids = set(int(r["created_by"]) for r in creator_rows if r["created_by"])
+    except Exception:
+        creator_ids = set()
     for uid in admin_ids:
         try:
             cmds = owner_cmds if base.is_owner(uid) else admin_cmds
@@ -5823,6 +5844,11 @@ async def _patched_refresh_scoped_commands(bot) -> None:
             cmds = admin_cmds
         with suppress(Exception):
             await bot.set_my_commands(cmds, scope=_ScopeChat(uid))
+    # Creators who are not admins get the creator (admin) command set in their inbox.
+    for uid in (creator_ids - admin_ids):
+        with suppress(Exception):
+            await bot.set_my_commands(admin_cmds, scope=_ScopeChat(uid))
+
 
 
 base.refresh_scoped_commands = _patched_refresh_scoped_commands
@@ -5841,9 +5867,22 @@ def _unique_bot_commands(commands: Iterable[BotCommand]) -> List[BotCommand]:
 
 
 def everyone_private_commands() -> List[BotCommand]:
+    # Regular users see only what's allotted to them: practice controls + help.
     return _unique_bot_commands([
         BotCommand("start", "Activate bot or open practice link"),
         BotCommand("panel", "Open your main panel"),
+        BotCommand("pauseq", "Pause private practice"),
+        BotCommand("resumeq", "Resume private practice"),
+        BotCommand("skipq", "Skip current private question"),
+        BotCommand("stoptqex", "Stop private exam or practice"),
+        BotCommand("help", "Help and commands"),
+        BotCommand("commands", "Full command list"),
+        BotCommand("cancel", "Cancel current input flow"),
+    ])
+
+
+def _creator_extra_commands() -> List[BotCommand]:
+    return [
         BotCommand("newexam", "Create a new exam draft"),
         BotCommand("drafts", "Show your exam drafts"),
         BotCommand("mydrafts", "Show your exam drafts"),
@@ -5870,22 +5909,15 @@ def everyone_private_commands() -> List[BotCommand]:
         BotCommand("setthumb", "Set preview thumbnail"),
         BotCommand("clearthumb", "Clear preview thumbnail"),
         BotCommand("thumbstatus", "Show thumbnail status"),
-        BotCommand("pauseq", "Pause private practice"),
-        BotCommand("resumeq", "Resume private practice"),
-        BotCommand("skipq", "Skip current private question"),
-        BotCommand("stoptqex", "Stop private exam or practice"),
-        BotCommand("help", "Help and commands"),
-        BotCommand("commands", "Full command list"),
-        BotCommand("cancel", "Cancel current input flow"),
-    ])
+    ]
 
 
 def admin_private_commands() -> List[BotCommand]:
-    return everyone_private_commands()
+    return _unique_bot_commands(everyone_private_commands() + _creator_extra_commands())
 
 
 def owner_private_commands() -> List[BotCommand]:
-    return _unique_bot_commands(everyone_private_commands() + [
+    return _unique_bot_commands(admin_private_commands() + [
         BotCommand("theme", "Leaderboard theme settings"),
         BotCommand("addadmin", "Add isolated admin"),
         BotCommand("addadminalp", "Add all-access admin"),
@@ -5915,6 +5947,7 @@ def owner_private_commands() -> List[BotCommand]:
     ])
 
 
+
 base.everyone_private_commands = everyone_private_commands
 base.admin_private_commands = admin_private_commands
 base.owner_private_commands = owner_private_commands
@@ -5936,6 +5969,11 @@ async def _gated_handle_text_for_newexam(update: Update, context) -> None:
                 if not ok:
                     await _send_creator_join_prompt(context, chat.id, channel)
                     return
+                # Promote this user's inbox menu to the creator command set.
+                if _ScopeChat is not None:
+                    with suppress(Exception):
+                        await context.bot.set_my_commands(admin_private_commands(), scope=_ScopeChat(user.id))
+
             # Role-aware /start welcome (skip when it's a practice deep-link)
             if cmd_l == "start" and not (args or "").strip().startswith("practice_"):
                 try:
