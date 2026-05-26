@@ -8,6 +8,7 @@ import importlib.util
 import json
 import random
 import re
+import unicodedata
 import urllib.parse
 import sys
 from contextlib import closing, suppress
@@ -49,6 +50,20 @@ COUNTER_RE = re.compile(r"^\s*[\[(]?\s*\d+\s*/\s*\d+\s*[\])]?\s*", re.I)
 URL_RE = re.compile(r"(?:https?://\S+|t\.me/\S+)", re.I)
 USERNAME_RE = re.compile(r"(?<!\w)@[A-Za-z0-9_]{3,}")
 QUIZBOT_TOKEN_RE = re.compile(r"(?:@quizbot\s+)?quiz\s*:\s*([A-Za-z0-9_-]{4,})", re.I)
+
+
+def _normalize_multiline_visual_text(text: Any) -> str:
+    """Normalize Telegram text without destroying intentional line breaks."""
+    value = unicodedata.normalize("NFKC", str(text or ""))
+    for ch in ["\u3164", "\u115F", "\u1160", "\u2800"]:
+        value = value.replace(ch, " ")
+    for ch in ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF", "\u00AD"]:
+        value = value.replace(ch, "")
+    value = value.replace("\t", " ").replace("\r", "")
+    value = re.sub(r"[ \f\v]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    return value.strip()
 
 
 def ensure_column(table: str, column: str, definition: str) -> None:
