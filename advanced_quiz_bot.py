@@ -2750,7 +2750,7 @@ def sanitize_existing_draft_questions(draft_id: str) -> Dict[str, int]:
             continue
         seen.add(sig)
         rebuilt.append({
-            "question": q,
+            "question": _ensure_question_brand_prefix(q),
             "options": clean_opts,
             "correct_option": int(new_correct),
             "explanation": exp,
