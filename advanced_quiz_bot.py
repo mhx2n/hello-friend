@@ -233,21 +233,21 @@ def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int
     """
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
     if sec:
-        head += f"  •  {sec}"
-    return head + "\n━━━━━━━━━━━━━━\n"
+        head += f"  {sec}"
+    return head + "\n\n"
 
 
 def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
     if sec:
-        head += f"  •  {sec}"
-    # Force a hard visual break before the question body so the section /
-    # brand prefix never glues onto the question text inside the poll card.
-    return head + "\n━━━━━━━━━━━━━━\n"
+        head += f"  {sec}"
+    # Keep the metadata above the question and force the actual question to
+    # start on its own line; no decorative line is placed after the counter.
+    return head + "\n\n"
 
 
 base._build_question_prefix = _build_question_prefix
