@@ -5815,6 +5815,18 @@ if _prev_callback_router_final is not None:
                 ok, _channel = await _creator_channel_check(context, user.id)
                 if ok:
                     await _delete_pending_welcome_message(context, user.id)
+                    # Also remove the channel-join prompt message we sent earlier.
+                    store = context.bot_data.setdefault("creator_join_prompt", {})
+                    old_mid = store.pop(int(user.id), None)
+                    if old_mid:
+                        with suppress(Exception):
+                            await base.safe_delete_message(context.bot, int(user.id), int(old_mid))
+                    # And delete the message the button was attached to, in case
+                    # it came from a different surface (e.g. welcome card).
+                    with suppress(Exception):
+                        msg = getattr(q, "message", None)
+                        if msg is not None:
+                            await base.safe_delete_message(context.bot, msg.chat.id, msg.message_id)
                     with suppress(Exception):
                         await q.answer("Verified.")
                     await _patched_refresh_user_panel_by_id(context, user.id)
