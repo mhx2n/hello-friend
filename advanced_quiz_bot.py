@@ -2579,6 +2579,19 @@ base.handle_text = handle_text
 
 
 _prev_send_admin_pdf_report = base.send_admin_pdf_report
+_prev_send_admin_text_results = base.send_admin_text_results
+
+
+async def _safe_send_admin_text_results(context, session, ranking):
+    # Skip the "Top Results" leaderboard for private/practice sessions
+    # (chat_id > 0 means a user inbox, not a group).
+    with suppress(Exception):
+        if int(session.get("chat_id") if isinstance(session, dict) else session["chat_id"]) > 0:
+            return
+    return await _prev_send_admin_text_results(context, session, ranking)
+
+
+base.send_admin_text_results = _safe_send_admin_text_results
 
 
 async def send_admin_pdf_report(context, session_id: str, ranking: List[Dict[str, Any]]) -> None:
