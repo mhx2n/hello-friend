@@ -5914,11 +5914,26 @@ try:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
 
+    async def _force_role_panel(update, context):
+        try:
+            user = getattr(update, "effective_user", None)
+            chat = getattr(update, "effective_chat", None)
+            if not user or not chat or chat.type != "private":
+                return
+            try:
+                base.mark_started(user)
+            except Exception:
+                pass
+            await _patched_refresh_user_panel_by_id(context, user.id)
+        except Exception:
+            pass
+
     def _patched_build_app_final():
         app = _orig_build_app_final()
         try:
             app.add_handler(_CommandHandler("start", _force_role_start), group=-100)
             app.add_handler(_CommandHandler(["help", "commands", "cmds"], _force_role_commands), group=-100)
+            app.add_handler(_CommandHandler(["panel", "menu", "home"], _force_role_panel), group=-100)
         except Exception:
             pass
         return app
