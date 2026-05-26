@@ -5953,6 +5953,11 @@ async def _gated_handle_text_for_newexam(update: Update, context) -> None:
                 if not ok:
                     await _send_creator_join_prompt(context, chat.id, channel)
                     return
+                # Promote this user's inbox menu to the creator command set.
+                if _ScopeChat is not None:
+                    with suppress(Exception):
+                        await context.bot.set_my_commands(admin_private_commands(), scope=_ScopeChat(user.id))
+
             # Role-aware /start welcome (skip when it's a practice deep-link)
             if cmd_l == "start" and not (args or "").strip().startswith("practice_"):
                 try:
