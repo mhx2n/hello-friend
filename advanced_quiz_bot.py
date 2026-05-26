@@ -377,7 +377,34 @@ async def _patched_handle_poll_answer(update, context):
     if answer and answer.user:
         # Pre-warm the cache so the base function's check is fast & consistent
         await _patched_is_required_channel_member(context, answer.user.id)
-    return await _orig_handle_poll_answer(update, context)
+    result = await _orig_handle_poll_answer(update, context)
+    # Fallback auto-advance for private-inbox practice/exam sessions when
+    # known_chats has no chat_type recorded (the base function relies on it).
+    try:
+        if answer and answer.user and answer.poll_id:
+            qrow = base.get_question_by_poll(answer.poll_id)
+            if qrow and qrow["session_status"] == "running":
+                session = base.get_session(qrow["session_id"])
+                if session and int(session["chat_id"]) == int(answer.user.id):
+                    # Private inbox: advance immediately after the answer.
+                    close_job_name = f"close:{qrow['session_id']}:{qrow['q_no']}"
+                    for job in context.job_queue.get_jobs_by_name(close_job_name):
+                        job.schedule_removal()
+                    with suppress(Exception):
+                        await context.bot.stop_poll(
+                            chat_id=session["chat_id"],
+                            message_id=int(qrow["message_id"] or 0),
+                        )
+                    base.set_session_active_poll(qrow["session_id"], None, None)
+                    context.job_queue.run_once(
+                        base.begin_or_advance_exam_job,
+                        when=0.2,
+                        data={"session_id": qrow["session_id"]},
+                        name=f"advance:{qrow['session_id']}:dm:{qrow['q_no']}",
+                    )
+    except Exception:
+        pass
+    return result
 
 
 base.handle_poll_answer = _patched_handle_poll_answer
