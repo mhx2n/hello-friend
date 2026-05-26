@@ -158,6 +158,19 @@ def apply_user_quiz_filters(user_id: Optional[int], text: str) -> str:
     return _normalize_multiline_visual_text(value)
 
 
+QUESTION_BRAND_PREFIX = "[TQX]"
+
+
+def _strip_question_brand_prefix(text: str) -> str:
+    value = _normalize_multiline_visual_text(text)
+    return re.sub(r"^\s*\[\s*TQX\s*\]\s*", "", value, flags=re.I).strip()
+
+
+def _ensure_question_brand_prefix(text: str) -> str:
+    value = _strip_question_brand_prefix(text)
+    return f"{QUESTION_BRAND_PREFIX} {value}".strip() if value else ""
+
+
 def get_brand_text(creator_id: Optional[int] = None) -> str:
     """Owner-only branding shown at the top of every quiz poll.
 
@@ -218,6 +231,15 @@ def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int
     Note: the literal "Q" prefix is intentionally omitted so the index
     reads as a plain "current / total" pair which looks cleaner.
     """
+    brand = get_brand_text(creator_id)
+    sec = (section_title or "").strip()
+    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
+    if sec:
+        head += f"  •  {sec}"
+    return head + "\n\n"
+
+
+def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
     head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
@@ -600,7 +622,7 @@ def _strip_checkmark(text: str) -> Tuple[str, bool]:
 
 
 def question_signature(question: str, options: Iterable[str]) -> str:
-    merged = " || ".join([clean_forwarded_text(question)] + [clean_forwarded_text(x) for x in options])
+    merged = " || ".join([_strip_question_brand_prefix(clean_forwarded_text(question))] + [clean_forwarded_text(x) for x in options])
     merged = merged.casefold()
     merged = re.sub(r"\s+", " ", merged)
     return merged.strip()
@@ -1956,6 +1978,14 @@ def build_commands_text(chat_type: str, is_admin_user: bool, is_owner_user: bool
             "• /start practice_TOKEN — open a generated practice exam",
             "• /filter WORD — remove that word from future forwarded/sent quizzes",
             "• /filters — show your saved quiz filters",
+            "• /panel — open your main panel",
+            "• /newexam — create your own exam after channel verification",
+            "• /drafts or /mydrafts — list your exam drafts",
+            "• /importtext or /txtquiz — import questions from pasted text or TXT",
+            "• /clonequiz — create a draft from forwarded quiz polls",
+            "• /section CODE 1-10 | Biology | 30 — add a section to your draft",
+            "• /sections CODE — list draft sections",
+            "• /csvformat — CSV import format",
             "• /pauseq — pause your private practice after the current question",
             "• /resumeq — resume a paused private practice",
             "• /skipq — skip the current private question",
@@ -2529,7 +2559,7 @@ def _smart_clean_question_text(raw: str) -> str:
     original = _normalize_multiline_visual_text(urllib.parse.unquote(raw or ""))
     if not original:
         return ""
-    value = original
+    value = _strip_question_brand_prefix(original)
     value = re.sub(r"/view_[A-Za-z0-9_]+", " ", value)
     value = COUNTER_RE.sub("", value)
     value = re.sub(r"\[[^\]]{0,120}?@[^\]]+\]", " ", value)
@@ -2714,7 +2744,7 @@ def dedup_add_question_to_draft(draft_id: str, question: str, options: List[str]
     sig = question_signature(q, cleaned_options)
     if sig in existing_question_signatures(draft_id):
         return False, None
-    q_no = base.add_question_to_draft(draft_id, q, cleaned_options, int(new_correct), exp, src)
+    q_no = base.add_question_to_draft(draft_id, _ensure_question_brand_prefix(q), cleaned_options, int(new_correct), exp, src)
     return True, q_no
 
 
@@ -2737,7 +2767,7 @@ def sanitize_existing_draft_questions(draft_id: str) -> Dict[str, int]:
             continue
         seen.add(sig)
         rebuilt.append({
-            "question": q,
+            "question": _ensure_question_brand_prefix(q),
             "options": clean_opts,
             "correct_option": int(new_correct),
             "explanation": exp,
@@ -3757,7 +3787,7 @@ def _rebuild_questions_exact(draft_id: str, items: List[Dict[str, Any]]) -> None
         for idx, item in enumerate(items, start=1):
             conn.execute(
                 'INSERT INTO draft_questions(draft_id, q_no, question, options, correct_option, explanation, src) VALUES(?,?,?,?,?,?,?)',
-                (draft_id, idx, item['question'], base.jdump(item['options']), int(item['correct_option']), item.get('explanation', ''), item.get('src', 'manual')),
+                (draft_id, idx, _ensure_question_brand_prefix(str(item['question'])), base.jdump(item['options']), int(item['correct_option']), item.get('explanation', ''), item.get('src', 'manual')),
             )
         conn.commit()
     base.refresh_draft_status(draft_id)
@@ -3809,7 +3839,15 @@ def _build_question_manager_text_markup(user_id: int, draft_id: str, page: int =
 
 def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: str = '') -> Tuple[str, InlineKeyboardMarkup]:
     drafts = list(base.list_user_drafts(user_id))
-    drafts = sorted(drafts, key=lambda r: int(r['updated_at']), reverse=True)
+    privileged_view = _is_privileged(user_id)
+    def _bucket(row: Any) -> Tuple[int, str]:
+        oid = int(row['owner_id'])
+        if base.is_owner(oid):
+            return (0, 'Owner-created exams')
+        if base.is_bot_admin(oid):
+            return (1, 'Admin-created exams')
+        return (2, 'User-created exams')
+    drafts = sorted(drafts, key=lambda r: (_bucket(r)[0] if privileged_view else 0, -int(r['updated_at'])))
     if not drafts:
         text = ((header + '\n\n') if header else '') + '<b>Your Draft Browser</b>\n\nNo drafts yet.'
         return text, InlineKeyboardMarkup([[InlineKeyboardButton('◂️ Back', callback_data='panel:home')]])
@@ -3824,11 +3862,17 @@ def _build_draft_browser_list_text_markup(user_id: int, page: int = 0, header: s
         lines += [header, '']
     lines += ['<b>Your Draft Browser</b>', f'Page <b>{page+1}/{total_pages}</b> • Total <b>{len(drafts)}</b>', '']
     kb_rows = []
+    last_bucket = ''
     for idx, row in enumerate(page_rows, start=start + 1):
+        bucket_label = _bucket(row)[1] if privileged_view else ''
+        if bucket_label and bucket_label != last_bucket:
+            lines.append(f'<b>{base.html_escape(bucket_label)}</b>')
+            last_bucket = bucket_label
         prefix = 'ON' if _draft_prefix_state(row) else 'OFF'
         status = 'ACTIVE' if active_id == row['id'] else ('Ready' if _safe_int(row['q_count']) > 0 else 'Draft')
         lines.append(f'<b>{idx}. {base.html_escape(row["title"])}</b>')
-        lines.append(f'Code: <code>{row["id"]}</code> • Q: <b>{row["q_count"]}</b> • {row["question_time"]} sec • -{row["negative_mark"]} • Prefix {prefix} • {status}')
+        creator = f' • Creator: <code>{row["owner_id"]}</code>' if privileged_view else ''
+        lines.append(f'Code: <code>{row["id"]}</code>{creator} • Q: <b>{row["q_count"]}</b> • {row["question_time"]} sec • -{row["negative_mark"]} • Prefix {prefix} • {status}')
         lines.append('')
         kb_rows.append([InlineKeyboardButton(f'▸ {row["id"]}', callback_data=f'ux:open:{row["id"]}:{page}'), InlineKeyboardButton('◆ Active' if active_id == row['id'] else '↻ Active', callback_data=f'ux:set:{row["id"]}:{page}')])
     nav = []
@@ -5051,9 +5095,13 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
-    q_text = _smart_clean_question_text(str(q['question'] or '')) or f'Question {next_index}'
+    q_text = _strip_question_brand_prefix(_smart_clean_question_text(str(q['question'] or ''))) or f'Question {next_index}'
     prefix_parts = [f'[{next_index}/{total}]']  # kept for image-caption fallback
-    question_prefix = _build_question_prefix(next_index, total)
+    try:
+        creator_id = int(session['created_by'] or 0)
+    except Exception:
+        creator_id = 0
+    question_prefix = _build_poll_question_prefix(next_index, total, creator_id=creator_id, section_title=section_title)
     poll_question = (question_prefix + _latex_to_poll_text(q_text)).strip() or f'Question {next_index}'
     if len(poll_question) > 300:
         allowed_q = max(10, 300 - len(question_prefix))
@@ -5875,7 +5923,7 @@ try:
             # Privileged users always go straight to the admin panel.
             if _is_privileged(user.id):
                 await _patched_refresh_user_panel_by_id(context, user.id)
-                return
+                raise ApplicationHandlerStop
 
             # For regular users: on first /start (or while not yet a member
             # of the required channel) show the owner-configured welcome +
@@ -5889,15 +5937,18 @@ try:
             if not already_started:
                 await _delete_pending_welcome_message(context, user.id)
                 await _show_first_start_welcome(context, message, user)
-                return
+                raise ApplicationHandlerStop
 
             if not joined:
                 await _delete_pending_welcome_message(context, user.id)
                 await _show_first_start_welcome(context, message, user)
-                return
+                raise ApplicationHandlerStop
 
             await _delete_pending_welcome_message(context, user.id)
             await _patched_refresh_user_panel_by_id(context, user.id)
+            raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5918,6 +5969,9 @@ try:
                 pass
             text = build_commands_text(chat.type, is_admin_u, is_owner_u)
             await base.safe_reply(message, text)
+            raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             with suppress(Exception):
                 return await _prev_handle_text_final(update, context)
@@ -5933,6 +5987,9 @@ try:
             except Exception:
                 pass
             await _patched_refresh_user_panel_by_id(context, user.id)
+            raise ApplicationHandlerStop
+        except ApplicationHandlerStop:
+            raise
         except Exception:
             pass
 
