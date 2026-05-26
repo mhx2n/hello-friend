@@ -5800,6 +5800,98 @@ async def _patched_refresh_scoped_commands(bot) -> None:
 base.refresh_scoped_commands = _patched_refresh_scoped_commands
 
 
+def _unique_bot_commands(commands: Iterable[BotCommand]) -> List[BotCommand]:
+    seen: set[str] = set()
+    unique: List[BotCommand] = []
+    for cmd in commands:
+        name = getattr(cmd, "command", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        unique.append(cmd)
+    return unique[:100]
+
+
+def everyone_private_commands() -> List[BotCommand]:
+    return _unique_bot_commands([
+        BotCommand("start", "Activate bot or open practice link"),
+        BotCommand("panel", "Open your main panel"),
+        BotCommand("newexam", "Create a new exam draft"),
+        BotCommand("drafts", "Show your exam drafts"),
+        BotCommand("mydrafts", "Show your exam drafts"),
+        BotCommand("draftinfo", "Show draft details"),
+        BotCommand("importtext", "Import MCQs from text or TXT"),
+        BotCommand("txtquiz", "Import MCQs from text or TXT"),
+        BotCommand("clonequiz", "Import forwarded quiz polls"),
+        BotCommand("cloneend", "Finish quiz-poll import"),
+        BotCommand("csvformat", "Show CSV import format"),
+        BotCommand("section", "Add one or many sections"),
+        BotCommand("sections", "List draft sections"),
+        BotCommand("clearsections", "Remove all draft sections"),
+        BotCommand("settitle", "Edit draft title"),
+        BotCommand("settime", "Edit question time"),
+        BotCommand("setneg", "Edit negative marking"),
+        BotCommand("shuffle", "Shuffle draft questions"),
+        BotCommand("delq", "Delete draft questions"),
+        BotCommand("exporthtml", "Export HTML practice exam"),
+        BotCommand("htmlexam", "Export HTML practice exam"),
+        BotCommand("creator", "Show draft creator info"),
+        BotCommand("filter", "Remove words from future quizzes"),
+        BotCommand("filters", "Show saved quiz filters"),
+        BotCommand("renamefile", "Rename a file in bot inbox"),
+        BotCommand("setthumb", "Set preview thumbnail"),
+        BotCommand("clearthumb", "Clear preview thumbnail"),
+        BotCommand("thumbstatus", "Show thumbnail status"),
+        BotCommand("pauseq", "Pause private practice"),
+        BotCommand("resumeq", "Resume private practice"),
+        BotCommand("skipq", "Skip current private question"),
+        BotCommand("stoptqex", "Stop private exam or practice"),
+        BotCommand("help", "Help and commands"),
+        BotCommand("commands", "Full command list"),
+        BotCommand("cancel", "Cancel current input flow"),
+    ])
+
+
+def admin_private_commands() -> List[BotCommand]:
+    return everyone_private_commands()
+
+
+def owner_private_commands() -> List[BotCommand]:
+    return _unique_bot_commands(everyone_private_commands() + [
+        BotCommand("theme", "Leaderboard theme settings"),
+        BotCommand("addadmin", "Add isolated admin"),
+        BotCommand("addadminalp", "Add all-access admin"),
+        BotCommand("rmadmin", "Remove admin"),
+        BotCommand("admins", "List admin roles"),
+        BotCommand("audit", "Recent admin actions"),
+        BotCommand("logs", "Bot logs summary"),
+        BotCommand("stats", "Owner statistics"),
+        BotCommand("broadcast", "Broadcast to groups and users"),
+        BotCommand("announce", "Announce to one chat"),
+        BotCommand("setbrand", "Set quiz branding text"),
+        BotCommand("brand", "Show current branding"),
+        BotCommand("getbrand", "Show current branding"),
+        BotCommand("setchannel", "Set required join channel"),
+        BotCommand("getchannel", "Show required join channel"),
+        BotCommand("setwelcome", "Set welcome message"),
+        BotCommand("welcome", "Preview welcome message"),
+        BotCommand("clearwelcome", "Disable welcome message"),
+        BotCommand("setbuttons", "Configure welcome buttons"),
+        BotCommand("clearbuttons", "Remove welcome buttons"),
+        BotCommand("setdefaultexplanation", "Set default explanation"),
+        BotCommand("cleardefaultexplanation", "Clear default explanation"),
+        BotCommand("exporttheme", "Set or list result themes"),
+        BotCommand("backupnow", "Create a database backup"),
+        BotCommand("restorebackup", "Restore latest backup"),
+        BotCommand("restart", "Restart bot"),
+    ])
+
+
+base.everyone_private_commands = everyone_private_commands
+base.admin_private_commands = admin_private_commands
+base.owner_private_commands = owner_private_commands
+
+
 _prev_handle_text_final = base.handle_text
 
 
