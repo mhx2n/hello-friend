@@ -3770,7 +3770,7 @@ def _rebuild_questions_exact(draft_id: str, items: List[Dict[str, Any]]) -> None
         for idx, item in enumerate(items, start=1):
             conn.execute(
                 'INSERT INTO draft_questions(draft_id, q_no, question, options, correct_option, explanation, src) VALUES(?,?,?,?,?,?,?)',
-                (draft_id, idx, item['question'], base.jdump(item['options']), int(item['correct_option']), item.get('explanation', ''), item.get('src', 'manual')),
+                (draft_id, idx, _ensure_question_brand_prefix(str(item['question'])), base.jdump(item['options']), int(item['correct_option']), item.get('explanation', ''), item.get('src', 'manual')),
             )
         conn.commit()
     base.refresh_draft_status(draft_id)
