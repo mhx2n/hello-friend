@@ -236,7 +236,7 @@ def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int
     head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
     if sec:
         head += f"  •  {sec}"
-    return head + "\n\n"
+    return head + "\n━━━━━━━━━━━━━━\n"
 
 
 def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
@@ -245,7 +245,9 @@ def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optiona
     head = f"✦ {brand}\n━━━━━━━━━━━━━━\n{next_index} / {total}"
     if sec:
         head += f"  •  {sec}"
-    return head + "\n\n"
+    # Force a hard visual break before the question body so the section /
+    # brand prefix never glues onto the question text inside the poll card.
+    return head + "\n━━━━━━━━━━━━━━\n"
 
 
 base._build_question_prefix = _build_question_prefix
@@ -791,6 +793,38 @@ def set_section(draft_id: str, start_q: int, end_q: int, title: str, question_ti
 
 def clear_sections(draft_id: str) -> None:
     base.DBH.execute("DELETE FROM draft_sections WHERE draft_id=?", (draft_id,))
+
+
+def _add_sections_bulk(draft_id: str, raw_text: str) -> Tuple[int, List[str]]:
+    """Parse a multi-line section block and persist each valid line.
+
+    One section per line: ``1-10 | Biology | 30`` (time optional).
+    Returns ``(added_count, [invalid_line, ...])``.
+    """
+    added = 0
+    errors: List[str] = []
+    for raw_line in str(raw_text or "").splitlines():
+        line = raw_line.strip().strip("•-*").strip()
+        if not line:
+            continue
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) < 2 or "-" not in parts[0]:
+            errors.append(raw_line)
+            continue
+        a, b = [x.strip() for x in parts[0].split("-", 1)]
+        if not (a.isdigit() and b.isdigit()):
+            errors.append(raw_line)
+            continue
+        title = parts[1] or f"Section {a}-{b}"
+        q_time = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
+        try:
+            set_section(draft_id, int(a), int(b), title, q_time)
+            added += 1
+        except Exception:
+            errors.append(raw_line)
+    return added, errors
+
+
 
 
 
@@ -2354,28 +2388,30 @@ async def handle_text(update: Update, context) -> None:
 
         if cmd == "section":
             if "|" not in args:
-                await base.safe_reply(message, "Usage: /section DRAFTCODE 1-10 | Biology | 30")
+                await base.safe_reply(message, "Usage:\n/section DRAFTCODE 1-10 | Biology | 30\n\nOr multi-line:\n<code>/section DRAFTCODE\n1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>", parse_mode=ParseMode.HTML)
                 return
-            left, title, time_part = [x.strip() for x in args.split("|", 2)] if args.count("|") >= 2 else [x.strip() for x in args.split("|", 1)] + [""]
-            bits = left.split()
-            if len(bits) < 2:
-                await base.safe_reply(message, "Usage: /section DRAFTCODE 1-10 | Biology | 30")
-                return
-            draft = resolve_editable_draft(user.id, bits[0])
+            # First whitespace-separated token = draft code; everything
+            # after the first newline / remaining tokens = section body.
+            stripped = args.lstrip()
+            head, _, rest = stripped.partition("\n")
+            head_bits = head.split(None, 1)
+            code = head_bits[0] if head_bits else ""
+            first_line = head_bits[1] if len(head_bits) >= 2 else ""
+            body = first_line
+            if rest.strip():
+                body = (first_line + "\n" + rest) if first_line else rest
+            draft = resolve_editable_draft(user.id, code)
             if not draft:
                 await base.safe_reply(message, "Draft not found, or you do not have access.")
                 return
-            rng = bits[1]
-            if "-" not in rng:
-                await base.safe_reply(message, "Use a question range like 1-10.")
-                return
-            a, b = rng.split("-", 1)
-            if not (a.strip().isdigit() and b.strip().isdigit()):
-                await base.safe_reply(message, "Use numeric question ranges like 1-10.")
-                return
-            q_time = int(time_part) if time_part.strip().isdigit() else None
-            set_section(draft["id"], int(a), int(b), title or f"Section {a}-{b}", q_time)
-            await base.safe_reply(message, f"◆ Section added to <code>{draft['id']}</code>.", parse_mode=ParseMode.HTML)
+            added_n, errors = _add_sections_bulk(draft["id"], body)
+            if added_n and not errors:
+                msg_text = f"◆ Added <b>{added_n}</b> section(s) to <code>{draft['id']}</code>."
+            elif added_n and errors:
+                msg_text = f"◆ Added <b>{added_n}</b> section(s). Skipped {len(errors)} invalid line(s)."
+            else:
+                msg_text = "▲️ Use one section per line: <code>1-10 | Biology | 30</code>"
+            await base.safe_reply(message, msg_text, parse_mode=ParseMode.HTML)
             return
 
         if cmd == "sections":
@@ -3518,7 +3554,7 @@ async def callback_router(update: Update, context) -> None:
                 'pneg': ('adv2_edit_neg', 'Send the negative mark now. Example: <code>0.25</code>'),
                 'padd': ('adv2_add_questions', 'Send MCQ text now, or upload a TXT/MD/JSON file. The bot will add every valid question and keep the inbox clean.'),
                 'pdelq': ('adv2_del_questions', 'Send question numbers to delete. Example: <code>3,5-7</code>'),
-                'psection': ('adv2_add_section', 'Send the section range in this format:\n<code>1-10 | Biology | 30</code>'),
+                'psection': ('adv2_add_section', 'Send one section per line:\n<code>1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>\n\nTime (the last number) is optional.'),
             }
             state_name, prompt = prompt_map[action]
             base.set_user_state(user.id, state_name, {'draft_id': draft_id, 'page': page})
@@ -3640,18 +3676,13 @@ async def handle_text(update: Update, context) -> None:
             sanitize_existing_draft_questions(draft_id)
             header = f'◆ Removed <b>{removed}</b> question(s).'
         elif state == 'adv2_add_section':
-            parts = [x.strip() for x in txt.split('|')]
-            if len(parts) < 2 or '-' not in parts[0]:
-                header = '▲️ Use: <code>1-10 | Biology | 30</code>'
+            added_n, errors = _add_sections_bulk(draft_id, txt)
+            if added_n and not errors:
+                header = f'◆ Added <b>{added_n}</b> section(s).'
+            elif added_n and errors:
+                header = f'◆ Added <b>{added_n}</b> section(s). Skipped {len(errors)} invalid line(s).'
             else:
-                a, b = [x.strip() for x in parts[0].split('-', 1)]
-                if not (a.isdigit() and b.isdigit()):
-                    header = '▲️ Use numeric ranges like <code>1-10</code>.'
-                else:
-                    title = parts[1] if len(parts) >= 2 else f'Section {a}-{b}'
-                    q_time = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else None
-                    set_section(draft_id, int(a), int(b), title, q_time)
-                    header = f'◆ Section added: <b>{base.html_escape(title)}</b>.'
+                header = '▲️ Use one section per line:\n<code>1-10 | Biology | 30</code>'
         with suppress(Exception):
             await base.safe_delete_message(context.bot, chat.id, message.message_id)
         text, kb = _build_draft_detail_text_markup(user.id, draft_id, page, header, context.bot_data.get('bot_username', ''))
@@ -3685,7 +3716,7 @@ async def handle_text(update: Update, context) -> None:
                 await base.safe_reply(message, 'Select an active draft first.')
                 return
             base.set_user_state(user.id, 'adv2_add_section', {'draft_id': draft_id, 'page': 0})
-            await _show_prompt(context, user.id, f"<b>Add Section</b>\nCode: <code>{draft_id}</code>\n\nSend: <code>1-10 | Biology | 30</code>")
+            await _show_prompt(context, user.id, f"<b>Add Section(s)</b>\nCode: <code>{draft_id}</code>\n\nSend one section per line:\n<code>1-10 | Biology | 30\n11-20 | English | 30\n21-30 | Bangla | 30</code>\n\nTime (the last number) is optional.")
             return
     return await _prev_handle_text_v5(update, context)
 
@@ -5813,6 +5844,18 @@ if _prev_callback_router_final is not None:
                 ok, _channel = await _creator_channel_check(context, user.id)
                 if ok:
                     await _delete_pending_welcome_message(context, user.id)
+                    # Also remove the channel-join prompt message we sent earlier.
+                    store = context.bot_data.setdefault("creator_join_prompt", {})
+                    old_mid = store.pop(int(user.id), None)
+                    if old_mid:
+                        with suppress(Exception):
+                            await base.safe_delete_message(context.bot, int(user.id), int(old_mid))
+                    # And delete the message the button was attached to, in case
+                    # it came from a different surface (e.g. welcome card).
+                    with suppress(Exception):
+                        msg = getattr(q, "message", None)
+                        if msg is not None:
+                            await base.safe_delete_message(context.bot, msg.chat.id, msg.message_id)
                     with suppress(Exception):
                         await q.answer("Verified.")
                     await _patched_refresh_user_panel_by_id(context, user.id)
