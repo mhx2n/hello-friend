@@ -219,35 +219,26 @@ base.user_has_staff_access = user_has_staff_access
 
 def _build_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     """
-    Professional poll header — clean multi-line alignment so a forwarded
-    quiz stays visually aligned. Format:
-
-        ✦ {brand}
-        ━━━━━━━━━━━━━━
-        {n} / {total}  •  {section}
-
-        {question text follows on its own block}
-
-    Note: the literal "Q" prefix is intentionally omitted so the index
-    reads as a plain "current / total" pair which looks cleaner.
+    Compact poll header that respects Telegram's 300-char poll question limit.
+    Format:
+        ✦ {brand}  •  {n}/{total}  •  {section}
+        {question text on its own line}
     """
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
+    head = f"✦ {brand}  •  {next_index}/{total}"
     if sec:
-        head += f"  {sec}"
-    return head + "\n\n"
+        head += f"  •  {sec}"
+    return head + "\n"
 
 
 def _build_poll_question_prefix(next_index: int, total: int, creator_id: Optional[int] = None, section_title: str = "") -> str:
     brand = get_brand_text(creator_id)
     sec = (section_title or "").strip()
-    head = f"✦ {brand}\n━━━━━━━━━━━━━━\n\n{next_index} / {total}"
+    head = f"✦ {brand}  •  {next_index}/{total}"
     if sec:
-        head += f"  {sec}"
-    # Keep the metadata above the question and force the actual question to
-    # start on its own line; no decorative line is placed after the counter.
-    return head + "\n\n"
+        head += f"  •  {sec}"
+    return head + "\n"
 
 
 base._build_question_prefix = _build_question_prefix
@@ -5135,6 +5126,14 @@ async def begin_or_advance_exam(context, session_id: str) -> None:
     effective_seconds = max(5, int(round(base_seconds * speed_factor)))
     draft_row = base.get_draft(str(session['draft_id'])) if session['draft_id'] else None
     show_title = _draft_prefix_state(draft_row)
+    try:
+        _creator_for_gate = int(session['created_by'] or 0)
+    except Exception:
+        _creator_for_gate = 0
+    # For non-staff (regular user) creators, never expose the exam title in
+    # the poll question — keep prefix always off, regardless of draft setting.
+    if _creator_for_gate and not _real_user_has_staff_access(_creator_for_gate):
+        show_title = False
     q_text = _strip_question_brand_prefix(_smart_clean_question_text(str(q['question'] or ''))) or f'Question {next_index}'
     title_label = ''
     try:
