@@ -4137,9 +4137,16 @@ async def handle_inline_query(update: Update, context) -> None:
         practice = base.ensure_practice_link(str(row['id']), int(row['owner_id']))
         practice_url = f'https://t.me/{bot_username}?start=practice_{practice["token"]}' if bot_username else ''
         prefix = 'ON' if _draft_prefix_state(row) else 'OFF'
-        text = f"<b>{base.html_escape(row['title'])}</b>\nQuiz ID: <code>{row['id']}</code>\nQuestions: <b>{row['q_count']}</b>\nTime / question: <b>{row['question_time']} sec</b>\nNegative / wrong: <b>{row['negative_mark']}</b>\nPrefix: <b>{prefix}</b>"
+        text = (
+            f"📘 <b>{base.html_escape(row['title'])}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"🆔 Quiz ID: <code>{row['id']}</code>\n"
+            f"❓ Questions: <b>{row['q_count']}</b>\n"
+            f"⏱ Time / question: <b>{row['question_time']} sec</b>\n"
+            f"➖ Negative / wrong: <b>{row['negative_mark']}</b>"
+        )
         if practice_url:
-            text += f"\n\nPractice link:\n{practice_url}"
+            text += f"\n\n🎯 <b>Practice link</b>\n{practice_url}"
         results.append(InlineQueryResultArticle(id=str(row['id']), title=f"{row['title']} [{row['id']}]", description=f"{row['q_count']} questions • {row['question_time']}s • -{row['negative_mark']} • Prefix {prefix}", input_message_content=InputTextMessageContent(text, parse_mode=ParseMode.HTML)))
     await iq.answer(results, cache_time=0, is_personal=True)
 
