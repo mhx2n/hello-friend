@@ -5813,9 +5813,14 @@ async def _patched_refresh_scoped_commands(bot) -> None:
     with suppress(Exception):
         await bot.set_my_commands(group_cmds, scope=_ScopeGAdm())
     try:
-        admin_ids = list(base.all_admin_ids())
+        admin_ids = set(int(x) for x in base.all_admin_ids())
     except Exception:
-        admin_ids = []
+        admin_ids = set()
+    try:
+        creator_rows = base.DBH.fetchall("SELECT DISTINCT created_by FROM drafts WHERE created_by IS NOT NULL")
+        creator_ids = set(int(r["created_by"]) for r in creator_rows if r["created_by"])
+    except Exception:
+        creator_ids = set()
     for uid in admin_ids:
         try:
             cmds = owner_cmds if base.is_owner(uid) else admin_cmds
@@ -5823,6 +5828,11 @@ async def _patched_refresh_scoped_commands(bot) -> None:
             cmds = admin_cmds
         with suppress(Exception):
             await bot.set_my_commands(cmds, scope=_ScopeChat(uid))
+    # Creators who are not admins get the creator (admin) command set in their inbox.
+    for uid in (creator_ids - admin_ids):
+        with suppress(Exception):
+            await bot.set_my_commands(admin_cmds, scope=_ScopeChat(uid))
+
 
 
 base.refresh_scoped_commands = _patched_refresh_scoped_commands
